@@ -115,8 +115,9 @@
       min-height: 54px;
       color: #aaa;
     }
-    #form-feedback .good { color: #4cde7a; font-weight: 600; }
-    #form-feedback .bad  { color: #ff5c5c; font-weight: 600; }
+    #form-feedback .good  { color: #4cde7a; font-weight: 600; }
+    #form-feedback .warn  { color: #f5a623; font-weight: 600; }
+    #form-feedback .bad   { color: #ff5c5c; font-weight: 600; }
 
     .btn-row { display: flex; gap: 10px; }
 
@@ -200,24 +201,28 @@ function angle3Points(A, B, C) {
   return Math.acos(Math.max(-1, Math.min(1, dot / (magAB * magCB)))) * (180 / Math.PI);
 }
 
-function lmVis(lm, idx, threshold = 0.3) {
+function lmVis(lm, idx, threshold = 0.25) {
+  // Lowered threshold from 0.3 to 0.25 to be more tolerant of partial visibility
   return lm[idx] && (lm[idx].visibility ?? 1) >= threshold;
 }
 
-// ── isInPushupPosition ────────────────────────────────────────
-// IMPORTANT: Does NOT use absolute y-coordinates to infer horizontal
-// posture — that breaks across different camera heights and angles.
-// Instead: checks elbow angle is in the pushup working range (50–178°)
-// which is unique to the pushup position regardless of camera angle.
-function isInPushupPosition(lm) {
-  const leftOk  = lmVis(lm,11) && lmVis(lm,13) && lmVis(lm,15);
-  const rightOk = lmVis(lm,12) && lmVis(lm,14) && lmVis(lm,16);
-  if (!leftOk && !rightOk) return false;
-
+// ── getBestSide ───────────────────────────────────────────────
+// Returns the side with better landmark visibility
+function getBestSide(lm) {
   const lScore = (lm[11]?.visibility??0)+(lm[13]?.visibility??0)+(lm[15]?.visibility??0);
   const rScore = (lm[12]?.visibility??0)+(lm[14]?.visibility??0)+(lm[16]?.visibility??0);
-  const s = lScore >= rScore ? 'left' : 'right';
+  return lScore >= rScore ? 'left' : 'right';
+}
 
+// ── isInPushupPosition ────────────────────────────────────────
+// More lenient: accepts a wider elbow angle range and is tolerant
+// of camera angles and partial visibility
+function isInPushupPosition(lm) {
+  const leftOk  = lmVis(lm,11,0.2) && lmVis(lm,13,0.2) && lmVis(lm,15,0.2);
+  const rightOk = lmVis(lm,12,0.2) && lmVis(lm,14,0.2) && lmVis(lm,16,0.2);
+  if (!leftOk && !rightOk) return false;
+
+  const s = getBestSide(lm);
   const shoulder = s==='left' ? lm[11] : lm[12];
   const elbow    = s==='left' ? lm[13] : lm[14];
   const wrist    = s==='left' ? lm[15] : lm[16];
@@ -225,23 +230,22 @@ function isInPushupPosition(lm) {
   const ea = angle3Points(shoulder, elbow, wrist);
   if (ea === null) return false;
 
-  // Push-up elbow range: 50° (deep bottom) to 178° (just before full lockout)
-  if (ea < 48 || ea > 178) return false;
+  // WIDENED range: 40° (very deep) to 180° (full lockout including straight arm start)
+  if (ea < 40 || ea > 180) return false;
 
-  // Wrist must not be way above the shoulder (rules out arms-overhead poses)
-  // Generous ±0.40 threshold handles all camera angles
-  if (wrist.y - shoulder.y < -0.40) return false;
+  // Wrist must not be way above the shoulder — more lenient at ±0.50
+  if (wrist.y - shoulder.y < -0.50) return false;
 
   return true;
 }
 
 // ── analyzeFrame ──────────────────────────────────────────────
+// Returns issues with SEVERITY classifications.
+// HIGH severity = truly bad form (both high-severity issues needed to mark bad rep)
+// MEDIUM = coaching tip shown but doesn't make it a "bad" rep alone
+// LOW = minor tip, always shown in feedback
 function analyzeFrame(lm) {
-  const issues = [];
-
-  const lVis = (lm[11]?.visibility??0)+(lm[23]?.visibility??0);
-  const rVis = (lm[12]?.visibility??0)+(lm[24]?.visibility??0);
-  const s = lVis >= rVis ? 'left' : 'right';
+  const s = getBestSide(lm);
 
   const shoulder = s==='left' ? lm[11] : lm[12];
   const elbow    = s==='left' ? lm[13] : lm[14];
@@ -252,72 +256,90 @@ function analyzeFrame(lm) {
   const ear      = s==='left' ? lm[7]  : lm[8];
 
   const armIdx = s==='left' ? [11,13,15] : [12,14,16];
-  if (!armIdx.every(i => lmVis(lm, i, 0.3))) {
+  if (!armIdx.every(i => lmVis(lm, i, 0.2))) {
     return { elbowAngle: null, issues: [], isGoodForm: true };
   }
 
   const elbowAngle = angle3Points(shoulder, elbow, wrist);
   if (elbowAngle === null) return { elbowAngle: null, issues: [], isGoodForm: true };
 
-  const hipVis   = lmVis(lm, s==='left'?23:24, 0.25);
-  const ankleVis = lmVis(lm, s==='left'?27:28, 0.25);
-  const kneeVis  = lmVis(lm, s==='left'?25:26, 0.25);
+  const issues = [];
+
+  const hipVis   = lmVis(lm, s==='left'?23:24, 0.2);
+  const ankleVis = lmVis(lm, s==='left'?27:28, 0.2);
+  const kneeVis  = lmVis(lm, s==='left'?25:26, 0.2);
 
   const backAngle = (hipVis && ankleVis) ? angle3Points(shoulder, hip, ankle) : null;
   const kneeAngle = (hipVis && kneeVis && ankleVis) ? angle3Points(hip, knee, ankle) : null;
 
-  // Body alignment
-  if (backAngle !== null && backAngle < 145) {
+  // ── Body alignment ─────────────────────────────────────────
+  // Only flag hip sag/raise if it's really pronounced (was <145, now <130)
+  if (backAngle !== null && backAngle < 130) {
     const midY = ankle ? (shoulder.y + ankle.y) / 2 : shoulder.y;
-    if (hip.y > midY + 0.04)
-      issues.push({ code:'HIP_SAG',    message:'Hips sagging — squeeze core and glutes to keep a straight line', severity:'high' });
-    else if (hip.y < midY - 0.06)
-      issues.push({ code:'HIP_RAISED', message:'Hips too high (pike) — lower hips to form a straight plank',     severity:'high' });
-  }
-
-  // Elbow flare
-  const expX = (shoulder.x + wrist.x) / 2;
-  if (Math.abs(elbow.x - expX) > 0.12)
-    issues.push({ code:'ELBOW_FLARE', message:'Elbows flaring out — tuck elbows ~45° toward your torso', severity:'medium' });
-
-  // Bent knees
-  if (kneeAngle !== null && kneeAngle < 150)
-    issues.push({ code:'BENT_KNEES', message:'Legs not straight — fully extend your knees', severity:'medium' });
-
-  // Head/neck
-  const earIdx = s==='left'?7:8;
-  if (lmVis(lm, earIdx, 0.3) && hipVis) {
-    const na = angle3Points(ear, shoulder, hip);
-    if (na !== null && na < 140) {
-      if (ear.y < shoulder.y - 0.10)
-        issues.push({ code:'HEAD_UP',   message:'Head craning up — keep neck neutral',           severity:'low' });
-      else if (ear.y > shoulder.y + 0.06)
-        issues.push({ code:'HEAD_DOWN', message:'Chin tucking too far — neutral neck position',  severity:'low' });
+    if (hip.y > midY + 0.08) {
+      // More lenient threshold: was 0.04, now 0.08
+      issues.push({ code:'HIP_SAG', message:'Hips sagging — squeeze core and glutes', severity:'high' });
+    } else if (hip.y < midY - 0.10) {
+      // More lenient: was -0.06, now -0.10
+      issues.push({ code:'HIP_RAISED', message:'Hips too high (pike) — lower hips for a straight plank', severity:'high' });
     }
   }
 
-  // Lumbar sag
+  // ── Elbow flare ────────────────────────────────────────────
+  // More lenient: was 0.12, now 0.18
+  const expX = (shoulder.x + wrist.x) / 2;
+  if (Math.abs(elbow.x - expX) > 0.18) {
+    issues.push({ code:'ELBOW_FLARE', message:'Elbows flaring — try tucking elbows ~45° toward torso', severity:'medium' });
+  }
+
+  // ── Bent knees ─────────────────────────────────────────────
+  // More lenient: was <150, now <130
+  if (kneeAngle !== null && kneeAngle < 130) {
+    issues.push({ code:'BENT_KNEES', message:'Legs slightly bent — try to extend your knees', severity:'low' });
+  }
+
+  // ── Head/neck ──────────────────────────────────────────────
+  const earIdx = s==='left'?7:8;
+  if (lmVis(lm, earIdx, 0.2) && hipVis) {
+    const na = angle3Points(ear, shoulder, hip);
+    if (na !== null && na < 130) {
+      // More lenient: was 140, now 130
+      if (ear.y < shoulder.y - 0.14)
+        issues.push({ code:'HEAD_UP', message:'Head craning up — keep neck neutral', severity:'low' });
+      else if (ear.y > shoulder.y + 0.10)
+        issues.push({ code:'HEAD_DOWN', message:'Chin tucking a bit — try neutral neck position', severity:'low' });
+    }
+  }
+
+  // ── Lumbar sag ─────────────────────────────────────────────
+  // More lenient: was 0.07, now 0.12
   if (backAngle !== null && ankleVis) {
     const dX = ankle.x - shoulder.x;
     if (Math.abs(dX) > 0.01) {
       const t = (hip.x - shoulder.x) / dX;
       const lineY = shoulder.y + t * (ankle.y - shoulder.y);
-      if (hip.y - lineY > 0.07)
+      if (hip.y - lineY > 0.12) {
         issues.push({ code:'LOWER_BACK_SAG', message:'Lower back sagging — engage abs and glutes', severity:'high' });
+      }
     }
   }
 
+  // Count high-severity issues
+  const highCount = issues.filter(i => i.severity === 'high').length;
+
+  // CHANGED: Only mark as "not good form" if 2+ high severity issues occur
+  // (was: any high severity issue = bad form)
   return {
     elbowAngle,
     issues,
-    isGoodForm: issues.filter(i => i.severity === 'high').length === 0
+    isGoodForm: highCount < 2
   };
 }
 
 function getPhase(angle) {
   if (angle === null) return 'UNKNOWN';
-  if (angle > 155) return 'UP';
-  if (angle < 90)  return 'DOWN';
+  if (angle > 145) return 'UP';   // Was 155 — more lenient top threshold
+  if (angle < 100) return 'DOWN'; // Was 90 — catch descent earlier
   return 'MOVING';
 }
 
@@ -325,10 +347,14 @@ function getPhase(angle) {
 //  REP COUNTER
 // ═══════════════════════════════════════════════════════════════
 
-const PHASE_CONFIRM_FRAMES   = 4;
-const MIN_DEPTH_ANGLE        = 100;
-const EMA_ALPHA              = 0.30;
-const POSITION_CONFIRM_FRAMES = 15;
+const PHASE_CONFIRM_FRAMES    = 3;   // Was 4 — react faster
+const MIN_DEPTH_ANGLE         = 115; // Was 100 — more lenient depth requirement
+const EMA_ALPHA               = 0.35; // Was 0.30 — slightly more responsive
+const POSITION_CONFIRM_FRAMES = 10;  // Was 15 — get ready faster
+// How many HIGH severity issues during a rep to call it truly "bad"
+const BAD_REP_HIGH_THRESHOLD  = 2;
+// Anomaly score must exceed this AND have high issues to mark bad rep
+const ANOMALY_BAD_THRESHOLD   = 0.12; // Was implicit in model; now explicit gate
 
 class RepCounter {
   constructor() { this.reset(); }
@@ -342,17 +368,17 @@ class RepCounter {
     this.badReps  = 0;
 
     this._repIssues       = [];
-    this._repIsGood       = true;
+    this._highIssueCount  = 0;
     this._minElbow        = 180;
     this._smoothedAngle   = null;
     this._inPosFr         = 0;
     this.isReady          = false;
   }
 
-  update(elbowAngle, isGoodForm, issues, inPosition) {
+  update(elbowAngle, isGoodForm, issues, inPosition, anomalyScore) {
     // Position gating
     if (!inPosition || elbowAngle === null) {
-      this._inPosFr = Math.max(0, this._inPosFr - 3);
+      this._inPosFr = Math.max(0, this._inPosFr - 2); // Was -3, slower dropout
       if (this._inPosFr === 0) this.isReady = false;
       return null;
     }
@@ -369,11 +395,12 @@ class RepCounter {
     // Track min depth
     if (angle < this._minElbow) this._minElbow = angle;
 
-    // Accumulate issues
-    if (!isGoodForm) this._repIsGood = false;
+    // Accumulate issues — track high-severity count separately
     for (const issue of issues) {
-      if (issue.severity !== 'low' && !this._repIssues.find(i => i.code === issue.code))
+      if (!this._repIssues.find(i => i.code === issue.code)) {
         this._repIssues.push(issue);
+        if (issue.severity === 'high') this._highIssueCount++;
+      }
     }
 
     // Phase candidate
@@ -393,38 +420,57 @@ class RepCounter {
       this.phase = candidate;
 
       if (prev === 'UP' && this.phase === 'DOWN') {
-        // Rep starting
-        this._repIssues = [];
-        this._repIsGood = true;
-        this._minElbow  = 180;
+        // Rep starting — reset trackers
+        this._repIssues      = [];
+        this._highIssueCount = 0;
+        this._minElbow       = 180;
       }
       if (prev === 'DOWN' && this.phase === 'UP') {
-        event = this._finalize();
+        event = this._finalize(anomalyScore);
       }
     }
     return event;
   }
 
-  _finalize() {
+  _finalize(anomalyScore) {
+    const allIssues = [...this._repIssues];
+    let isShallow = false;
+
+    // Shallow rep warning — but more lenient (115° instead of 100°)
     if (this._minElbow > MIN_DEPTH_ANGLE) {
-      this._repIsGood = false;
-      this._repIssues.push({
+      isShallow = true;
+      allIssues.push({
         code: 'SHALLOW_REP',
-        message: `Shallow rep — lower until elbows reach ~90° (you reached ~${Math.round(this._minElbow)}°)`,
-        severity: 'high'
+        message: `Try to go a bit deeper — you reached ~${Math.round(this._minElbow)}°, aim for ~90–100°`,
+        severity: 'medium' // Was 'high' — now medium so it doesn't auto-fail
       });
     }
+
+    // Count high-severity issues accumulated during this rep
+    const highCount = allIssues.filter(i => i.severity === 'high').length;
+
+    // Anomaly flag (only counts if score is truly high)
+    const anomalyBad = anomalyScore !== null && anomalyScore > ANOMALY_BAD_THRESHOLD;
+
+    // BAD REP only if: 2+ high severity issues AND (anomaly is bad OR issues are truly severe)
+    // Otherwise it's a GOOD REP with tips shown
     let event;
-    if (this._repIsGood && this._repIssues.length === 0) {
-      this.goodReps++;
-      event = { type: 'GOOD_REP' };
-    } else {
+    if (highCount >= BAD_REP_HIGH_THRESHOLD && anomalyBad) {
       this.badReps++;
-      event = { type: 'BAD_REP', issues: [...this._repIssues] };
+      event = { type: 'BAD_REP', issues: allIssues };
+    } else if (highCount >= 3) {
+      // Even without anomaly, 3+ high issues = bad rep
+      this.badReps++;
+      event = { type: 'BAD_REP', issues: allIssues };
+    } else {
+      this.goodReps++;
+      // GOOD REP but still show any tips/warnings
+      event = { type: 'GOOD_REP', issues: allIssues };
     }
-    this._repIssues = [];
-    this._repIsGood = true;
-    this._minElbow  = 180;
+
+    this._repIssues      = [];
+    this._highIssueCount = 0;
+    this._minElbow       = 180;
     return event;
   }
 
@@ -443,7 +489,7 @@ class PushupModel {
     this.buffer    = [];
     this.SEQ_LEN   = 30;
     this.FEATURES  = 68;
-    this.THRESHOLD = 0.08;
+    this.THRESHOLD = 0.12; // Raised from 0.08 — less trigger-happy
   }
 
   async load() {
@@ -478,7 +524,7 @@ class PushupModel {
           err += d * d;
         }
       err /= (this.SEQ_LEN * this.FEATURES);
-      return { score: err, isAnomaly: err > this.THRESHOLD };
+      return err; // raw score
     } catch(e) {
       return null;
     } finally {
@@ -497,16 +543,16 @@ const ANOMALY_INTERVAL = 10;
 let repCounter  = null;
 let gruModel    = null;
 let frameCount  = 0;
-let lastAnomaly = null;
+let lastAnomaly = null; // raw score number or null
 let appRunning  = false;
 
-const elGoodReps    = () => document.getElementById('good-reps');
-const elBadReps     = () => document.getElementById('bad-reps');
-const elElbow       = () => document.getElementById('elbow-angle');
-const elPhaseEl     = () => document.getElementById('phase');
-const elAnomalyEl   = () => document.getElementById('anomaly-score');
-const elFeedback    = () => document.getElementById('form-feedback');
-const elStatusEl    = () => document.getElementById('status');
+const elGoodReps  = () => document.getElementById('good-reps');
+const elBadReps   = () => document.getElementById('bad-reps');
+const elElbow     = () => document.getElementById('elbow-angle');
+const elPhaseEl   = () => document.getElementById('phase');
+const elAnomalyEl = () => document.getElementById('anomaly-score');
+const elFeedback  = () => document.getElementById('form-feedback');
+const elStatusEl  = () => document.getElementById('status');
 
 async function startApp() {
   if (appRunning) return;
@@ -542,8 +588,8 @@ async function startApp() {
   pose.setOptions({
     modelComplexity: 1,
     smoothLandmarks: true,
-    minDetectionConfidence: 0.5,
-    minTrackingConfidence: 0.5
+    minDetectionConfidence: 0.45, // Was 0.5 — more tolerant
+    minTrackingConfidence:  0.45
   });
   pose.onResults(onResults);
 
@@ -572,16 +618,21 @@ async function onResults(results) {
       lm[i]?.x ?? 0, lm[i]?.y ?? 0, lm[i]?.z ?? 0, lm[i]?.visibility ?? 0
     ]);
     gruModel.addFrame(fd);
-    if (frameCount % ANOMALY_INTERVAL === 0) lastAnomaly = await gruModel.getScore();
+    if (frameCount % ANOMALY_INTERVAL === 0) {
+      lastAnomaly = await gruModel.getScore(); // raw score now
+    }
   } else {
     gruModel.clearBuffer();
     lastAnomaly = null;
   }
 
-  let isGood = analysis.isGoodForm;
-  if (lastAnomaly?.isAnomaly) isGood = false;
-
-  const repEvent = repCounter.update(analysis.elbowAngle, isGood, analysis.issues, inPosition);
+  const repEvent = repCounter.update(
+    analysis.elbowAngle,
+    analysis.isGoodForm,
+    analysis.issues,
+    inPosition,
+    lastAnomaly // pass raw score
+  );
 
   updateUI(analysis, repEvent, inPosition);
 }
@@ -606,18 +657,32 @@ function updateUI(analysis, repEvent, inPosition) {
     setStatus('🟢 Counting — go!', 'ready');
   }
 
-  elAnomalyEl().textContent = lastAnomaly ? lastAnomaly.score.toFixed(4) : '--';
+  elAnomalyEl().textContent = lastAnomaly !== null ? lastAnomaly.toFixed(4) : '--';
 
   if (repEvent) {
+    const fb = elFeedback();
     if (repEvent.type === 'GOOD_REP') {
-      elFeedback().innerHTML = '<span class="good">✓ Great rep!</span>';
-    } else {
-      const top = repEvent.issues
+      const tips = (repEvent.issues || [])
+        .filter(i => i.severity !== 'low' || repEvent.issues.length <= 2)
         .sort((a,b) => rank(b.severity) - rank(a.severity))
-        .slice(0,3)
+        .slice(0, 3);
+
+      if (tips.length === 0) {
+        fb.innerHTML = '<span class="good">✓ Perfect rep! Great form!</span>';
+      } else {
+        const tipHtml = tips.map(i =>
+          `• <span class="${i.severity === 'high' ? 'warn' : ''}">${i.message}</span>`
+        ).join('<br>');
+        fb.innerHTML = `<span class="good">✓ Good rep!</span> A few tips:<br>${tipHtml}`;
+      }
+    } else {
+      // BAD REP
+      const top = (repEvent.issues || [])
+        .sort((a,b) => rank(b.severity) - rank(a.severity))
+        .slice(0, 3)
         .map(i => `• ${i.message}`)
         .join('<br>');
-      elFeedback().innerHTML = `<span class="bad">✗ Bad rep:</span><br>${top}`;
+      fb.innerHTML = `<span class="bad">✗ Rep needs improvement:</span><br>${top}`;
     }
   }
 }
