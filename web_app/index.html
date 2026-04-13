@@ -1,52 +1,233 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Push-up AI Trainer</title>
   <style>
-    body { margin: 0; background: #0f0f0f; color: #eee; font-family: sans-serif; }
-    #container { display: flex; gap: 20px; padding: 20px; }
-    #video { width: 640px; border-radius: 12px; }
-    #panel { flex: 1; }
-    .stat { font-size: 2rem; font-weight: bold; }
-    .feedback-ok   { color: #4ade80; }
-    .feedback-warn { color: #facc15; }
-    .good { color: #4ade80; }
-    .bad  { color: #f87171; }
-    #overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.8);
-               align-items: center; justify-content: center; font-size: 2rem; }
-    button { padding: 10px 20px; margin-bottom: 10px; cursor: pointer; }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      background: #111;
+      color: #f0f0f0;
+      font-family: 'Segoe UI', system-ui, sans-serif;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      min-height: 100vh;
+      padding: 16px;
+    }
+
+    h1 {
+      font-size: 1.4rem;
+      font-weight: 600;
+      color: #f5a623;
+      margin-bottom: 12px;
+      letter-spacing: 0.04em;
+    }
+
+    /* ── Layout ─────────────────────────────────────────────────── */
+    .container {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 16px;
+      width: 100%;
+      max-width: 960px;
+      justify-content: center;
+    }
+
+    /* ── Video panel ─────────────────────────────────────────────── */
+    .video-wrap {
+      position: relative;
+      flex: 1 1 340px;
+      max-width: 560px;
+      border-radius: 12px;
+      overflow: hidden;
+      background: #000;
+      aspect-ratio: 4/3;
+    }
+
+    video {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      display: block;
+      transform: scaleX(-1); /* mirror for selfie-style */
+    }
+
+    /* ── Stats panel ─────────────────────────────────────────────── */
+    .stats {
+      flex: 1 1 220px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    /* Status banner */
+    #status {
+      padding: 10px 14px;
+      border-radius: 8px;
+      font-size: 0.95rem;
+      font-weight: 500;
+      background: #2a2a2a;
+      color: #bbb;
+      min-height: 42px;
+      display: flex;
+      align-items: center;
+    }
+
+    #status.status-waiting { background: #2a2200; color: #f5c842; }
+    #status.status-ready   { background: #0d2a12; color: #4cde7a; }
+
+    /* Rep counters */
+    .rep-row {
+      display: flex;
+      gap: 12px;
+    }
+
+    .rep-card {
+      flex: 1;
+      background: #1e1e1e;
+      border-radius: 10px;
+      padding: 12px;
+      text-align: center;
+    }
+
+    .rep-card .label {
+      font-size: 0.75rem;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: #888;
+      margin-bottom: 4px;
+    }
+
+    .rep-card .value {
+      font-size: 2.4rem;
+      font-weight: 700;
+      line-height: 1;
+    }
+
+    .rep-card.good .value { color: #4cde7a; }
+    .rep-card.bad  .value { color: #ff5c5c; }
+
+    /* Detail rows */
+    .detail-row {
+      background: #1e1e1e;
+      border-radius: 8px;
+      padding: 10px 14px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 0.9rem;
+    }
+
+    .detail-row .key   { color: #888; }
+    .detail-row .val   { font-weight: 600; color: #f0f0f0; }
+
+    /* Feedback box */
+    #form-feedback {
+      background: #1e1e1e;
+      border-radius: 8px;
+      padding: 12px 14px;
+      font-size: 0.875rem;
+      line-height: 1.6;
+      min-height: 56px;
+      color: #ccc;
+    }
+
+    #form-feedback .good { color: #4cde7a; font-weight: 600; }
+    #form-feedback .bad  { color: #ff5c5c; font-weight: 600; }
+
+    /* Buttons */
+    .btn-row {
+      display: flex;
+      gap: 10px;
+    }
+
+    button {
+      flex: 1;
+      padding: 12px 0;
+      border: none;
+      border-radius: 8px;
+      font-size: 1rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: opacity 0.2s;
+    }
+
+    button:disabled { opacity: 0.45; cursor: default; }
+
+    #start-btn {
+      background: #f5a623;
+      color: #111;
+    }
+
+    #reset-btn {
+      background: #2a2a2a;
+      color: #ccc;
+    }
   </style>
+
+  <!-- MediaPipe Pose (loaded before our module) -->
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/pose/pose.js" crossorigin="anonymous"></script>
 </head>
 <body>
 
-<button id="start-btn">▶ Start Camera</button>
+  <h1>Push-up AI Trainer</h1>
 
-<div id="container">
-  <video id="video" autoplay muted playsinline></video>
+  <div class="container">
 
-  <div id="panel">
-    <p id="camera-feedback" class="feedback-warn">Click Start Camera</p>
+    <!-- Video -->
+    <div class="video-wrap">
+      <video id="video" playsinline muted></video>
+    </div>
 
-    <p>Good reps: <span id="good-reps" class="stat">0</span></p>
-    <p>Bad reps:  <span id="bad-reps"  class="stat">0</span></p>
+    <!-- Stats -->
+    <div class="stats">
 
-    <p>Elbow angle: <span id="elbow-angle">—</span></p>
-    <p>Phase: <span id="phase">—</span></p>
-    <p>Anomaly score: <span id="anomaly-score">—</span></p>
+      <!-- Readiness / position status -->
+      <div id="status">Click Start to begin</div>
 
-    <div id="form-feedback"></div>
+      <!-- Rep counters -->
+      <div class="rep-row">
+        <div class="rep-card good">
+          <div class="label">Good Reps</div>
+          <div class="value" id="good-reps">0</div>
+        </div>
+        <div class="rep-card bad">
+          <div class="label">Bad Reps</div>
+          <div class="value" id="bad-reps">0</div>
+        </div>
+      </div>
+
+      <!-- Live data -->
+      <div class="detail-row">
+        <span class="key">Elbow angle</span>
+        <span class="val" id="elbow-angle">--</span>
+      </div>
+      <div class="detail-row">
+        <span class="key">Phase</span>
+        <span class="val" id="phase">--</span>
+      </div>
+      <div class="detail-row">
+        <span class="key">Anomaly score</span>
+        <span class="val" id="anomaly-score">--</span>
+      </div>
+
+      <!-- Form feedback (updated only on rep completion) -->
+      <div id="form-feedback">Form feedback will appear here after each rep.</div>
+
+      <!-- Buttons -->
+      <div class="btn-row">
+        <button id="start-btn">Start Camera</button>
+        <button id="reset-btn">Reset</button>
+      </div>
+
+    </div>
   </div>
-</div>
 
-<div id="overlay">
-  <div id="final-message"></div>
-</div>
-
-<script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/@mediapipe/pose/pose.js"></script>
-<script type="module" src="/src/main.js"></script>
-
+  <!-- Main app module -->
+  <script type="module" src="main.js"></script>
 
 </body>
 </html>

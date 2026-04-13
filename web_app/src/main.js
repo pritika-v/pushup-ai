@@ -3,62 +3,80 @@ import { analyzeFrame, isInPushupPosition } from './angleHeuristics.js';
 import { RepCounter } from './repCounter.js';
 import { PushupModel } from './modelInference.js';
 
-console.log("JS LOADED");
+console.log('JS LOADED');
 
-// ── Keypoint indices to extract for GRU model ─────────────────────────────────
-// 17 keypoints × 4 values (x, y, z, visibility) = 68 features
+// 17 keypoints × 4 values = 68 features for GRU model
 const KEYPOINT_INDICES = [
-  11, 12, 13, 14, 15, 16,   // shoulders, elbows, wrists
-  23, 24, 25, 26, 27, 28,   // hips, knees, ankles
-  0,                         // nose
-  7, 8,                      // ears
-  9, 10                      // mouth (left/right — used as face width proxy)
+  11, 12, 13, 14, 15, 16,  // shoulders, elbows, wrists
+  23, 24, 25, 26, 27, 28,  // hips, knees, ankles
+  0,                        // nose
+  7,  8,                    // ears
+  9, 10                     // mouth corners
 ];
 
-// ── Anomaly scoring throttle ───────────────────────────────────────────────────
-// Don't run the GRU model every single frame — only every N frames.
-const ANOMALY_SCORE_INTERVAL = 10;
+// Run GRU anomaly scoring every N frames (it's expensive)
+const ANOMALY_INTERVAL = 10;
 
-// ── Module-level state ────────────────────────────────────────────────────────
-let repCounter = null;
-let gruModel   = null;
-let frameCount = 0;       // total frames processed since start
-let lastAnomaly = null;   // most recent anomaly result (cached between intervals)
+// ── State ─────────────────────────────────────────────────────────────────────
+let repCounter  = null;
+let gruModel    = null;
+let frameCount  = 0;
+let lastAnomaly = null;
+let appRunning  = false;
 
-// ─── App startup ──────────────────────────────────────────────────────────────
+// ── DOM refs (resolved after DOMContentLoaded) ────────────────────────────────
+let elGoodReps, elBadReps, elElbow, elPhase, elAnomalyScore,
+    elFeedback, elStatus, elStartBtn, elResetBtn;
+
+function resolveDOM() {
+  elGoodReps    = document.getElementById('good-reps');
+  elBadReps     = document.getElementById('bad-reps');
+  elElbow       = document.getElementById('elbow-angle');
+  elPhase       = document.getElementById('phase');
+  elAnomalyScore = document.getElementById('anomaly-score');
+  elFeedback    = document.getElementById('form-feedback');
+  elStatus      = document.getElementById('status');
+  elStartBtn    = document.getElementById('start-btn');
+  elResetBtn    = document.getElementById('reset-btn');
+}
+
+// ── App startup ───────────────────────────────────────────────────────────────
 async function startApp() {
-  // Disable the button while loading
-  const btn = document.getElementById('start-btn');
-  btn.disabled = true;
-  btn.textContent = 'Starting…';
+  if (appRunning) return;
+
+  resolveDOM();
+
+  elStartBtn.disabled    = true;
+  elStartBtn.textContent = 'Starting…';
+  if (elStatus) elStatus.textContent = '⏳ Requesting camera…';
 
   const video = document.getElementById('video');
 
+  // Camera
   try {
-    const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+    const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
     video.srcObject = stream;
     await video.play();
   } catch (err) {
-    console.error('Camera access failed:', err);
-    alert('Could not access your camera. Please allow camera permissions and try again.');
-    btn.disabled = false;
-    btn.textContent = 'Start';
+    console.error('Camera error:', err);
+    alert('Could not access camera. Check permissions and try again.');
+    elStartBtn.disabled    = false;
+    elStartBtn.textContent = 'Start';
+    if (elStatus) elStatus.textContent = '❌ Camera access denied';
     return;
   }
 
-  // Init state
-  repCounter = new RepCounter();
-  frameCount = 0;
+  // Init counters / model
+  repCounter  = new RepCounter();
+  frameCount  = 0;
   lastAnomaly = null;
 
-  // Load GRU model (non-fatal if it fails — anomaly detection is optional)
   gruModel = new PushupModel();
-  await gruModel.load();
+  await gruModel.load(); // non-fatal if it fails
 
-  // Init MediaPipe Pose
+  // MediaPipe Pose
   const pose = new window.Pose({
-    locateFile: (file) =>
-      `https://cdn.jsdelivr.net/npm/@mediapipe/pose/${file}`
+    locateFile: file => `https://cdn.jsdelivr.net/npm/@mediapipe/pose/${file}`
   });
 
   pose.setOptions({
@@ -70,57 +88,58 @@ async function startApp() {
 
   pose.onResults(onPoseResults);
 
-  btn.textContent = 'Running…';
+  appRunning             = true;
+  elStartBtn.textContent = 'Running';
+  if (elStatus) {
+    elStatus.textContent  = '📍 Get into push-up position';
+    elStatus.className    = 'status-waiting';
+  }
 
-  // Main loop
+  // Main loop — requestAnimationFrame drives MediaPipe at display refresh rate
   async function loop() {
+    if (!appRunning) return;
     await pose.send({ image: video });
     requestAnimationFrame(loop);
   }
-
   loop();
 }
 
-// ─── Per-frame processing ─────────────────────────────────────────────────────
+// ── Per-frame handler ─────────────────────────────────────────────────────────
 async function onPoseResults(results) {
   if (!results.poseLandmarks) return;
 
   const landmarks = results.poseLandmarks;
   frameCount++;
 
-  // ── 1. Check if person is in push-up position ─────────────────────────────
+  // 1. Position detection (camera-angle-agnostic)
   const inPosition = isInPushupPosition(landmarks);
 
-  // ── 2. Analyze form angles ────────────────────────────────────────────────
+  // 2. Angle + form analysis
   const analysis = analyzeFrame(landmarks);
 
-  // ── 3. Feed keypoints to GRU model (only when in position) ───────────────
+  // 3. GRU model — only feed frames when in position
   if (inPosition && analysis.elbowAngle !== null) {
     const frameData = KEYPOINT_INDICES.flatMap(i => [
-      landmarks[i].x,
-      landmarks[i].y,
-      landmarks[i].z,
-      landmarks[i].visibility
+      landmarks[i]?.x          ?? 0,
+      landmarks[i]?.y          ?? 0,
+      landmarks[i]?.z          ?? 0,
+      landmarks[i]?.visibility ?? 0
     ]);
     gruModel.addFrame(frameData);
 
-    // Run anomaly scoring periodically (not every frame — expensive)
-    if (frameCount % ANOMALY_SCORE_INTERVAL === 0) {
+    if (frameCount % ANOMALY_INTERVAL === 0) {
       lastAnomaly = await gruModel.getAnomalyScore();
     }
   } else {
-    // Person not in position — clear GRU buffer so stale frames don't corrupt scoring
     gruModel.clearBuffer();
     lastAnomaly = null;
   }
 
-  // ── 4. Override isGoodForm if anomaly detected ────────────────────────────
+  // 4. Merge anomaly into form quality
   let isGood = analysis.isGoodForm;
-  if (lastAnomaly && lastAnomaly.isAnomaly) {
-    isGood = false;
-  }
+  if (lastAnomaly?.isAnomaly) isGood = false;
 
-  // ── 5. Update rep counter ──────────────────────────────────────────────────
+  // 5. Rep counter
   const repEvent = repCounter.update(
     analysis.elbowAngle,
     isGood,
@@ -128,84 +147,92 @@ async function onPoseResults(results) {
     inPosition
   );
 
-  // ── 6. Update UI ───────────────────────────────────────────────────────────
-  updateUI(analysis, lastAnomaly, repEvent, inPosition);
+  // 6. Update UI
+  updateUI(analysis, repEvent, inPosition);
 }
 
-// ─── UI update ────────────────────────────────────────────────────────────────
-function updateUI(analysis, anomaly, repEvent, inPosition) {
-  // Rep counts
-  document.getElementById('good-reps').textContent = repCounter.goodReps;
-  document.getElementById('bad-reps').textContent  = repCounter.badReps;
+// ── UI update ─────────────────────────────────────────────────────────────────
+// UI is updated every frame for live data (angle, phase, status).
+// Feedback text is only updated when a rep completes, to avoid flicker.
+function updateUI(analysis, repEvent, inPosition) {
+  if (!repCounter) return;
 
-  // Elbow angle — show smoothed value
+  // Live counters
+  if (elGoodReps) elGoodReps.textContent = repCounter.goodReps;
+  if (elBadReps)  elBadReps.textContent  = repCounter.badReps;
+
+  // Elbow angle — show smoothed value when available
   const displayAngle = repCounter.smoothedAngle ?? analysis.elbowAngle;
-  document.getElementById('elbow-angle').textContent =
-    displayAngle !== null ? Math.round(displayAngle) + '°' : '--';
+  if (elElbow) {
+    elElbow.textContent = displayAngle !== null ? Math.round(displayAngle) + '°' : '--';
+  }
 
-  // Current phase
-  document.getElementById('phase').textContent = inPosition
-    ? (repCounter.isReady ? repCounter.phase : 'GET READY…')
-    : 'NOT IN POSITION';
+  // Phase label
+  if (elPhase) {
+    if (!inPosition) {
+      elPhase.textContent = 'NOT IN POSITION';
+    } else if (!repCounter.isReady) {
+      elPhase.textContent = 'GET READY…';
+    } else {
+      elPhase.textContent = repCounter.phase;
+    }
+  }
 
   // Anomaly score
-  const anomalyEl = document.getElementById('anomaly-score');
-  if (anomalyEl) {
-    anomalyEl.textContent = anomaly ? anomaly.score.toFixed(4) : '--';
+  if (elAnomalyScore) {
+    elAnomalyScore.textContent = lastAnomaly ? lastAnomaly.score.toFixed(4) : '--';
   }
 
-  // ── Form feedback — ONLY update when a rep just completed ─────────────────
-  // This avoids the constant flicker of per-frame feedback changes.
-  if (repEvent) {
-    const fb = document.getElementById('form-feedback');
-    if (repEvent.type === 'GOOD_REP') {
-      fb.innerHTML = '<span class="good">✓ Great rep! Keep it up.</span>';
-    } else {
-      const topIssues = repEvent.issues
-        .sort((a, b) => severityRank(b.severity) - severityRank(a.severity))
-        .slice(0, 3); // show top 3 issues max
-      const msgs = topIssues.map(i => `• ${i.message}`).join('<br>');
-      fb.innerHTML = `<span class="bad">✗ Rep counted with form issues:</span><br>${msgs}`;
-    }
-  }
-
-  // ── Position / readiness status ───────────────────────────────────────────
-  const statusEl = document.getElementById('status');
-  if (statusEl) {
+  // Status banner
+  if (elStatus) {
     if (!inPosition) {
-      statusEl.textContent = '📍 Get into push-up position to begin';
-      statusEl.className = 'status-waiting';
+      elStatus.textContent = '📍 Get into push-up position to begin';
+      elStatus.className   = 'status-waiting';
     } else if (!repCounter.isReady) {
-      statusEl.textContent = '⏳ Hold position… getting ready';
-      statusEl.className = 'status-waiting';
+      elStatus.textContent = '⏳ Hold position… getting ready';
+      elStatus.className   = 'status-waiting';
     } else {
-      statusEl.textContent = '🟢 Ready — start your reps!';
-      statusEl.className = 'status-ready';
+      elStatus.textContent = '🟢 Counting — go!';
+      elStatus.className   = 'status-ready';
+    }
+  }
+
+  // Feedback — only update on rep event (prevents constant flicker)
+  if (repEvent && elFeedback) {
+    if (repEvent.type === 'GOOD_REP') {
+      elFeedback.innerHTML = '<span class="good">✓ Great rep!</span>';
+    } else {
+      const top = repEvent.issues
+        .sort((a, b) => severityRank(b.severity) - severityRank(a.severity))
+        .slice(0, 3)
+        .map(i => `• ${i.message}`)
+        .join('<br>');
+      elFeedback.innerHTML = `<span class="bad">✗ Bad rep:</span><br>${top}`;
     }
   }
 }
 
-// Helper: convert severity string to sort number
-function severityRank(severity) {
-  return { high: 3, medium: 2, low: 1 }[severity] ?? 0;
+function severityRank(s) {
+  return { high: 3, medium: 2, low: 1 }[s] ?? 0;
 }
 
-// ─── Button wiring ────────────────────────────────────────────────────────────
-document.getElementById('start-btn').addEventListener('click', () => {
-  console.log('Start button clicked');
-  startApp();
-});
+// ── Button wiring ─────────────────────────────────────────────────────────────
+document.addEventListener('DOMContentLoaded', () => {
+  resolveDOM();
 
-// Optional: reset button
-const resetBtn = document.getElementById('reset-btn');
-if (resetBtn) {
-  resetBtn.addEventListener('click', () => {
-    if (repCounter) {
-      repCounter.reset();
-      document.getElementById('good-reps').textContent  = '0';
-      document.getElementById('bad-reps').textContent   = '0';
-      document.getElementById('form-feedback').textContent = '';
-      console.log('Rep counter reset');
-    }
+  elStartBtn?.addEventListener('click', () => {
+    console.log('Start clicked');
+    startApp();
   });
-}
+
+  elResetBtn?.addEventListener('click', () => {
+    if (!repCounter) return;
+    repCounter.reset();
+    lastAnomaly = null;
+    if (elGoodReps)   elGoodReps.textContent  = '0';
+    if (elBadReps)    elBadReps.textContent    = '0';
+    if (elFeedback)   elFeedback.textContent   = '';
+    if (elStatus)     elStatus.textContent     = '📍 Get into push-up position to begin';
+    console.log('Reset');
+  });
+});

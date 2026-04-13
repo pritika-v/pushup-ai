@@ -1,80 +1,63 @@
 import * as tf from '@tensorflow/tfjs';
 
-// ─── PushupModel ──────────────────────────────────────────────────────────────
-// GRU-based autoencoder for push-up form anomaly detection.
-// Only accumulates frames and scores when the person is actively in position.
 export class PushupModel {
   constructor() {
-    this.model = null;
+    this.model          = null;
     this.sequenceBuffer = [];
-    this.SEQ_LENGTH = 30;   // frames needed before scoring
-    this.FEATURES   = 68;   // 17 keypoints × 4 values
-
-    // Anomaly threshold — tuned to avoid false positives from slight jitter.
-    // Increase this value if you're getting too many false anomalies.
+    this.SEQ_LENGTH     = 30;
+    this.FEATURES       = 68;
+    // Raised threshold to reduce false anomalies from normal movement variation
     this.ANOMALY_THRESHOLD = 0.08;
   }
 
   async load() {
     try {
       this.model = await tf.loadLayersModel('/models/gru_model/model.json');
-      console.log('✅ GRU anomaly model loaded');
+      console.log('✅ GRU model loaded');
     } catch (err) {
-      console.warn('⚠️ GRU model failed to load — anomaly detection disabled', err);
+      console.warn('⚠️ GRU model not loaded — anomaly detection disabled:', err.message);
       this.model = null;
     }
   }
 
-  // Add a single frame of keypoint data.
-  // Only call this when the person IS in push-up position.
+  // Only call when person IS in push-up position
   addFrame(frame) {
-    if (frame.length !== this.FEATURES) {
-      console.warn(`Expected ${this.FEATURES} features, got ${frame.length}`);
-      return;
-    }
+    if (frame.length !== this.FEATURES) return;
     this.sequenceBuffer.push(frame);
     if (this.sequenceBuffer.length > this.SEQ_LENGTH) {
       this.sequenceBuffer.shift();
     }
   }
 
-  // Clear the buffer (call when person leaves push-up position)
+  // Call when person leaves position — prevents stale frames poisoning scores
   clearBuffer() {
     this.sequenceBuffer = [];
   }
 
-  // Returns anomaly info object, or null if not enough data / model not loaded
   async getAnomalyScore() {
-    if (!this.model || this.sequenceBuffer.length < this.SEQ_LENGTH) {
-      return null;
-    }
+    if (!this.model || this.sequenceBuffer.length < this.SEQ_LENGTH) return null;
 
-    let input;
-    let output;
+    let input = null;
+    let output = null;
     try {
-      input  = tf.tensor([this.sequenceBuffer]); // [1, SEQ_LENGTH, FEATURES]
+      input  = tf.tensor([this.sequenceBuffer]);
       output = this.model.predict(input);
-
       const pred = await output.array();
 
       let error = 0;
       for (let t = 0; t < this.SEQ_LENGTH; t++) {
         for (let f = 0; f < this.FEATURES; f++) {
-          const diff = this.sequenceBuffer[t][f] - pred[0][t][f];
-          error += diff * diff;
+          const d = this.sequenceBuffer[t][f] - pred[0][t][f];
+          error += d * d;
         }
       }
       error /= (this.SEQ_LENGTH * this.FEATURES);
 
-      return {
-        score: error,
-        isAnomaly: error > this.ANOMALY_THRESHOLD
-      };
+      return { score: error, isAnomaly: error > this.ANOMALY_THRESHOLD };
     } catch (err) {
-      console.warn('Anomaly score computation failed:', err);
+      console.warn('Anomaly score error:', err);
       return null;
     } finally {
-      // Always dispose tensors to avoid memory leaks
       if (input)  input.dispose();
       if (output) output.dispose();
     }

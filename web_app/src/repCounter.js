@@ -1,70 +1,64 @@
 import { getPhase } from './angleHeuristics.js';
 
-// ─── Constants ─────────────────────────────────────────────────────────────────
-// How many consecutive frames a phase must be confirmed before transitioning.
-// This prevents single-frame jitter from triggering phase changes.
+// ─── Tuning constants ─────────────────────────────────────────────────────────
+
+// Frames a phase must be held continuously before it's committed.
+// Prevents single-frame jitter from flipping the state machine.
 const PHASE_CONFIRM_FRAMES = 4;
 
-// Minimum elbow angle depth required to count a rep as "full depth".
-// If the person never bends their elbows below this, it's a shallow rep.
+// Minimum elbow bend required at the bottom of a rep to count as full depth.
+// If the person never gets to 100° in the DOWN phase, rep is marked shallow.
 const MIN_DEPTH_ANGLE = 100;
 
-// Smoothing window for elbow angle (exponential moving average alpha)
-const EMA_ALPHA = 0.25;
+// Exponential moving average smoothing for elbow angle.
+// Lower = more smoothing (more lag). Higher = more responsive (more jitter).
+const EMA_ALPHA = 0.30;
 
-// How many consecutive frames of "in position" needed before counting begins
-const POSITION_CONFIRM_FRAMES = 20;
+// Consecutive in-position frames required before counting begins.
+// Prevents counting during the walk-up / getting-into-position phase.
+const POSITION_CONFIRM_FRAMES = 15;
 
-// ─── RepCounter ────────────────────────────────────────────────────────────────
+// ─── RepCounter ───────────────────────────────────────────────────────────────
 export class RepCounter {
   constructor() {
     this.reset();
   }
 
   reset() {
-    // Phase state machine
-    this.phase = 'UP';            // Current confirmed phase: UP | DOWN | MOVING
-    this.pendingPhase = 'UP';     // Phase candidate being confirmed
-    this.pendingCount = 0;        // Frames the pending phase has been seen
+    this.phase         = 'UP';
+    this.pendingPhase  = 'UP';
+    this.pendingCount  = 0;
 
-    // Rep tracking
     this.goodReps = 0;
     this.badReps  = 0;
 
-    // Within-rep issue accumulation
-    // Issues seen during the CURRENT rep (cleared after each rep)
-    this._repIssues = [];
-    this._repIsGood = true;
+    this._repIssues        = [];
+    this._repIsGood        = true;
+    this._minElbowThisRep  = 180;
 
-    // Did the person reach adequate depth in this rep?
-    this._reachedDepth = false;
+    this._smoothedAngle    = null;
 
-    // Minimum elbow angle seen in the current DOWN phase
-    this._minElbowThisRep = 180;
-
-    // Smoothed elbow angle (EMA)
-    this._smoothedAngle = null;
-
-    // Session readiness: person must be in position for N frames before counting
     this._inPositionFrames = 0;
-    this.isReady = false;
+    this.isReady           = false;
   }
 
-  // ── Main update ──────────────────────────────────────────────────────────────
-  // Call this every frame with:
-  //   elbowAngle   – raw angle from analyzeFrame (or null if landmarks not visible)
-  //   isGoodForm   – boolean from analyzeFrame
-  //   issues       – array of issue objects from analyzeFrame
-  //   inPosition   – boolean: is the person in a push-up position?
+  // ── update() ─────────────────────────────────────────────────────────────
+  // Call every frame.
+  //   elbowAngle  – from analyzeFrame (number or null)
+  //   isGoodForm  – boolean
+  //   issues      – array of issue objects
+  //   inPosition  – boolean from isInPushupPosition()
   //
-  // Returns a rep event object when a rep completes, otherwise null.
+  // Returns a rep event object on rep completion, or null.
   update(elbowAngle, isGoodForm, issues, inPosition) {
-    // ── 1. Position gating ───────────────────────────────────────────────────
+
+    // ── 1. Position gating ──────────────────────────────────────────────────
     if (!inPosition || elbowAngle === null) {
-      // Person not in position — reset readiness counter
-      // But don't fully reset state so they can pause and resume
-      this._inPositionFrames = Math.max(0, this._inPositionFrames - 2);
-      if (this._inPositionFrames === 0) this.isReady = false;
+      // Decay the in-position counter (faster decay so we react quickly)
+      this._inPositionFrames = Math.max(0, this._inPositionFrames - 3);
+      if (this._inPositionFrames === 0) {
+        this.isReady = false;
+      }
       return null;
     }
 
@@ -75,7 +69,7 @@ export class RepCounter {
 
     if (!this.isReady) return null;
 
-    // ── 2. Smooth the elbow angle ─────────────────────────────────────────────
+    // ── 2. Smooth the angle ──────────────────────────────────────────────────
     if (this._smoothedAngle === null) {
       this._smoothedAngle = elbowAngle;
     } else {
@@ -83,37 +77,25 @@ export class RepCounter {
     }
     const angle = this._smoothedAngle;
 
-    // ── 3. Accumulate issues during this rep ──────────────────────────────────
-    // Only track high/medium severity to avoid noise from low-severity issues
-    if (!isGoodForm) {
-      this._repIsGood = false;
-    }
-    for (const issue of issues) {
-      if ((issue.severity === 'high' || issue.severity === 'medium') &&
-          !this._repIssues.find(i => i.code === issue.code)) {
-        this._repIssues.push(issue);
-      }
-    }
-
-    // ── 4. Track minimum angle reached ────────────────────────────────────────
+    // ── 3. Track minimum angle in this rep ──────────────────────────────────
     if (angle < this._minElbowThisRep) {
       this._minElbowThisRep = angle;
     }
 
-    // ── 5. Phase candidate detection ──────────────────────────────────────────
-    const rawPhase = getPhase(angle);
-    let candidatePhase;
-
-    if (rawPhase === 'UP') {
-      candidatePhase = 'UP';
-    } else if (rawPhase === 'DOWN') {
-      candidatePhase = 'DOWN';
-    } else {
-      // MOVING — keep the last confirmed phase as candidate (don't interrupt)
-      candidatePhase = this.phase;
+    // ── 4. Accumulate form issues (deduplicated, high+medium only) ───────────
+    if (!isGoodForm) this._repIsGood = false;
+    for (const issue of issues) {
+      if (issue.severity !== 'low' && !this._repIssues.find(i => i.code === issue.code)) {
+        this._repIssues.push(issue);
+      }
     }
 
-    // ── 6. Phase confirmation ──────────────────────────────────────────────────
+    // ── 5. Determine phase candidate ────────────────────────────────────────
+    const rawPhase = getPhase(angle);
+    // Only transition between UP and DOWN — MOVING keeps existing phase
+    const candidatePhase = rawPhase === 'UP' ? 'UP' : rawPhase === 'DOWN' ? 'DOWN' : this.phase;
+
+    // ── 6. Confirm phase transition ─────────────────────────────────────────
     if (candidatePhase !== this.pendingPhase) {
       this.pendingPhase = candidatePhase;
       this.pendingCount = 1;
@@ -121,42 +103,34 @@ export class RepCounter {
       this.pendingCount++;
     }
 
-    // Only commit phase transition when confirmed for N frames
     let event = null;
     if (this.pendingCount >= PHASE_CONFIRM_FRAMES && candidatePhase !== this.phase) {
-      const prevPhase = this.phase;
+      const prev = this.phase;
       this.phase = candidatePhase;
 
-      // ── 7. Rep completion (DOWN → UP) ────────────────────────────────────────
-      if (prevPhase === 'DOWN' && this.phase === 'UP') {
-        event = this._finalizeRep();
+      if (prev === 'UP' && this.phase === 'DOWN') {
+        // Rep starting — reset per-rep tracking
+        this._repIssues       = [];
+        this._repIsGood       = true;
+        this._minElbowThisRep = 180;
       }
 
-      // ── 8. Rep start (UP → DOWN) — begin fresh issue tracking ────────────────
-      if (prevPhase === 'UP' && this.phase === 'DOWN') {
-        this._beginRep();
+      if (prev === 'DOWN' && this.phase === 'UP') {
+        // Rep completed — evaluate
+        event = this._finalizeRep();
       }
     }
 
     return event;
   }
 
-  // ── Begin a new rep (called when transitioning UP → DOWN) ──────────────────
-  _beginRep() {
-    this._repIssues    = [];
-    this._repIsGood    = true;
-    this._reachedDepth = false;
-    this._minElbowThisRep = 180;
-  }
-
-  // ── Finalize a rep (called when transitioning DOWN → UP) ───────────────────
   _finalizeRep() {
-    // Check range of motion: did the person go deep enough?
+    // Check depth
     if (this._minElbowThisRep > MIN_DEPTH_ANGLE) {
       this._repIsGood = false;
       this._repIssues.push({
         code: 'SHALLOW_REP',
-        message: `Shallow rep — try to lower until your elbows reach ~90° (you reached ~${Math.round(this._minElbowThisRep)}°)`,
+        message: `Shallow rep — lower until elbows reach ~90° (you reached ~${Math.round(this._minElbowThisRep)}°)`,
         severity: 'high'
       });
     }
@@ -171,14 +145,12 @@ export class RepCounter {
     }
 
     // Reset per-rep state
-    this._repIssues    = [];
-    this._repIsGood    = true;
-    this._reachedDepth = false;
+    this._repIssues       = [];
+    this._repIsGood       = true;
     this._minElbowThisRep = 180;
 
     return event;
   }
 
-  // ── Convenience getters ────────────────────────────────────────────────────
   get smoothedAngle() { return this._smoothedAngle; }
 }
