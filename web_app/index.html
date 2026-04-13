@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Push-up AI Trainer</title>
+  <style>
+    body { margin: 0; background: #0f0f0f; color: #eee; font-family: sans-serif; }
+    #container { display: flex; gap: 20px; padding: 20px; }
+    #video { width: 640px; border-radius: 12px; }
+    #panel { flex: 1; }
+    .stat { font-size: 2rem; font-weight: bold; }
+    .feedback-ok   { color: #4ade80; }
+    .feedback-warn { color: #facc15; }
+    .good { color: #4ade80; }
+    .bad  { color: #f87171; }
+    #overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.8);
+               align-items: center; justify-content: center; font-size: 2rem; }
+    button { padding: 10px 20px; margin-bottom: 10px; cursor: pointer; }
+  </style>
+</head>
+<body>
+
+<button id="start-btn">▶ Start Camera</button>
+
+<div id="container">
+  <video id="video" autoplay muted playsinline></video>
+
+  <div id="panel">
+    <p id="camera-feedback" class="feedback-warn">Click Start Camera</p>
+
+    <p>Good reps: <span id="good-reps" class="stat">0</span></p>
+    <p>Bad reps:  <span id="bad-reps"  class="stat">0</span></p>
+
+    <p>Elbow angle: <span id="elbow-angle">—</span></p>
+    <p>Phase: <span id="phase">—</span></p>
+    <p>Anomaly score: <span id="anomaly-score">—</span></p>
+
+    <div id="form-feedback"></div>
+  </div>
+</div>
+
+<div id="overlay">
+  <div id="final-message"></div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/pose/pose.js"></script>
+<script type="module" src="/src/main.js"></script>
+
+
+</body>
+</html>
