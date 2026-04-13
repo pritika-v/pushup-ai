@@ -16,17 +16,17 @@
       align-items: center;
       min-height: 100vh;
       padding: 16px;
+      gap: 12px;
     }
 
     h1 {
       font-size: 1.4rem;
-      font-weight: 600;
+      font-weight: 700;
       color: #f5a623;
-      margin-bottom: 12px;
       letter-spacing: 0.04em;
+      align-self: flex-start;
     }
 
-    /* ── Layout ─────────────────────────────────────────────────── */
     .container {
       display: flex;
       flex-wrap: wrap;
@@ -36,9 +36,7 @@
       justify-content: center;
     }
 
-    /* ── Video panel ─────────────────────────────────────────────── */
     .video-wrap {
-      position: relative;
       flex: 1 1 340px;
       max-width: 560px;
       border-radius: 12px;
@@ -52,22 +50,20 @@
       height: 100%;
       object-fit: cover;
       display: block;
-      transform: scaleX(-1); /* mirror for selfie-style */
+      transform: scaleX(-1);
     }
 
-    /* ── Stats panel ─────────────────────────────────────────────── */
     .stats {
       flex: 1 1 220px;
       display: flex;
       flex-direction: column;
-      gap: 12px;
+      gap: 10px;
     }
 
-    /* Status banner */
     #status {
       padding: 10px 14px;
       border-radius: 8px;
-      font-size: 0.95rem;
+      font-size: 0.92rem;
       font-weight: 500;
       background: #2a2a2a;
       color: #bbb;
@@ -75,15 +71,10 @@
       display: flex;
       align-items: center;
     }
+    #status.waiting { background: #2a2200; color: #f5c842; }
+    #status.ready   { background: #0d2a12; color: #4cde7a; }
 
-    #status.status-waiting { background: #2a2200; color: #f5c842; }
-    #status.status-ready   { background: #0d2a12; color: #4cde7a; }
-
-    /* Rep counters */
-    .rep-row {
-      display: flex;
-      gap: 12px;
-    }
+    .rep-row { display: flex; gap: 10px; }
 
     .rep-card {
       flex: 1;
@@ -92,57 +83,42 @@
       padding: 12px;
       text-align: center;
     }
-
     .rep-card .label {
-      font-size: 0.75rem;
+      font-size: 0.72rem;
       text-transform: uppercase;
       letter-spacing: 0.08em;
-      color: #888;
+      color: #777;
       margin-bottom: 4px;
     }
-
-    .rep-card .value {
-      font-size: 2.4rem;
-      font-weight: 700;
-      line-height: 1;
-    }
-
+    .rep-card .value { font-size: 2.4rem; font-weight: 700; line-height: 1; }
     .rep-card.good .value { color: #4cde7a; }
     .rep-card.bad  .value { color: #ff5c5c; }
 
-    /* Detail rows */
     .detail-row {
       background: #1e1e1e;
       border-radius: 8px;
-      padding: 10px 14px;
+      padding: 9px 14px;
       display: flex;
       justify-content: space-between;
       align-items: center;
-      font-size: 0.9rem;
+      font-size: 0.88rem;
     }
+    .detail-row .key { color: #777; }
+    .detail-row .val { font-weight: 600; color: #f0f0f0; }
 
-    .detail-row .key   { color: #888; }
-    .detail-row .val   { font-weight: 600; color: #f0f0f0; }
-
-    /* Feedback box */
     #form-feedback {
       background: #1e1e1e;
       border-radius: 8px;
       padding: 12px 14px;
-      font-size: 0.875rem;
+      font-size: 0.85rem;
       line-height: 1.6;
-      min-height: 56px;
-      color: #ccc;
+      min-height: 54px;
+      color: #aaa;
     }
-
     #form-feedback .good { color: #4cde7a; font-weight: 600; }
     #form-feedback .bad  { color: #ff5c5c; font-weight: 600; }
 
-    /* Buttons */
-    .btn-row {
-      display: flex;
-      gap: 10px;
-    }
+    .btn-row { display: flex; gap: 10px; }
 
     button {
       flex: 1;
@@ -152,82 +128,518 @@
       font-size: 1rem;
       font-weight: 600;
       cursor: pointer;
-      transition: opacity 0.2s;
+      transition: opacity 0.15s;
     }
-
-    button:disabled { opacity: 0.45; cursor: default; }
-
-    #start-btn {
-      background: #f5a623;
-      color: #111;
-    }
-
-    #reset-btn {
-      background: #2a2a2a;
-      color: #ccc;
-    }
+    button:disabled { opacity: 0.4; cursor: default; }
+    #start-btn { background: #f5a623; color: #111; }
+    #reset-btn { background: #2a2a2a; color: #ccc; }
   </style>
 
-  <!-- MediaPipe Pose (loaded before our module) -->
+  <!-- MediaPipe Pose — must load before our script -->
   <script src="https://cdn.jsdelivr.net/npm/@mediapipe/pose/pose.js" crossorigin="anonymous"></script>
+  <!-- TensorFlow.js -->
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.17.0/dist/tf.min.js"></script>
 </head>
 <body>
 
-  <h1>Push-up AI Trainer</h1>
+<h1>Push-up AI Trainer</h1>
 
-  <div class="container">
-
-    <!-- Video -->
-    <div class="video-wrap">
-      <video id="video" playsinline muted></video>
-    </div>
-
-    <!-- Stats -->
-    <div class="stats">
-
-      <!-- Readiness / position status -->
-      <div id="status">Click Start to begin</div>
-
-      <!-- Rep counters -->
-      <div class="rep-row">
-        <div class="rep-card good">
-          <div class="label">Good Reps</div>
-          <div class="value" id="good-reps">0</div>
-        </div>
-        <div class="rep-card bad">
-          <div class="label">Bad Reps</div>
-          <div class="value" id="bad-reps">0</div>
-        </div>
-      </div>
-
-      <!-- Live data -->
-      <div class="detail-row">
-        <span class="key">Elbow angle</span>
-        <span class="val" id="elbow-angle">--</span>
-      </div>
-      <div class="detail-row">
-        <span class="key">Phase</span>
-        <span class="val" id="phase">--</span>
-      </div>
-      <div class="detail-row">
-        <span class="key">Anomaly score</span>
-        <span class="val" id="anomaly-score">--</span>
-      </div>
-
-      <!-- Form feedback (updated only on rep completion) -->
-      <div id="form-feedback">Form feedback will appear here after each rep.</div>
-
-      <!-- Buttons -->
-      <div class="btn-row">
-        <button id="start-btn">Start Camera</button>
-        <button id="reset-btn">Reset</button>
-      </div>
-
-    </div>
+<div class="container">
+  <div class="video-wrap">
+    <video id="video" playsinline muted></video>
   </div>
 
-  <!-- Main app module -->
-  <script type="module" src="main.js"></script>
+  <div class="stats">
+    <div id="status">Click Start to begin</div>
 
+    <div class="rep-row">
+      <div class="rep-card good">
+        <div class="label">Good Reps</div>
+        <div class="value" id="good-reps">0</div>
+      </div>
+      <div class="rep-card bad">
+        <div class="label">Bad Reps</div>
+        <div class="value" id="bad-reps">0</div>
+      </div>
+    </div>
+
+    <div class="detail-row">
+      <span class="key">Elbow angle</span>
+      <span class="val" id="elbow-angle">--</span>
+    </div>
+    <div class="detail-row">
+      <span class="key">Phase</span>
+      <span class="val" id="phase">--</span>
+    </div>
+    <div class="detail-row">
+      <span class="key">Anomaly score</span>
+      <span class="val" id="anomaly-score">--</span>
+    </div>
+
+    <div id="form-feedback">Form feedback will appear here after each rep.</div>
+
+    <div class="btn-row">
+      <button id="start-btn">Start Camera</button>
+      <button id="reset-btn">Reset</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// ═══════════════════════════════════════════════════════════════
+//  ANGLE HEURISTICS
+// ═══════════════════════════════════════════════════════════════
+
+function angle3Points(A, B, C) {
+  const AB = { x: A.x - B.x, y: A.y - B.y };
+  const CB = { x: C.x - B.x, y: C.y - B.y };
+  const dot = AB.x * CB.x + AB.y * CB.y;
+  const magAB = Math.hypot(AB.x, AB.y);
+  const magCB = Math.hypot(CB.x, CB.y);
+  if (magAB === 0 || magCB === 0) return null;
+  return Math.acos(Math.max(-1, Math.min(1, dot / (magAB * magCB)))) * (180 / Math.PI);
+}
+
+function lmVis(lm, idx, threshold = 0.3) {
+  return lm[idx] && (lm[idx].visibility ?? 1) >= threshold;
+}
+
+// ── isInPushupPosition ────────────────────────────────────────
+// IMPORTANT: Does NOT use absolute y-coordinates to infer horizontal
+// posture — that breaks across different camera heights and angles.
+// Instead: checks elbow angle is in the pushup working range (50–178°)
+// which is unique to the pushup position regardless of camera angle.
+function isInPushupPosition(lm) {
+  const leftOk  = lmVis(lm,11) && lmVis(lm,13) && lmVis(lm,15);
+  const rightOk = lmVis(lm,12) && lmVis(lm,14) && lmVis(lm,16);
+  if (!leftOk && !rightOk) return false;
+
+  const lScore = (lm[11]?.visibility??0)+(lm[13]?.visibility??0)+(lm[15]?.visibility??0);
+  const rScore = (lm[12]?.visibility??0)+(lm[14]?.visibility??0)+(lm[16]?.visibility??0);
+  const s = lScore >= rScore ? 'left' : 'right';
+
+  const shoulder = s==='left' ? lm[11] : lm[12];
+  const elbow    = s==='left' ? lm[13] : lm[14];
+  const wrist    = s==='left' ? lm[15] : lm[16];
+
+  const ea = angle3Points(shoulder, elbow, wrist);
+  if (ea === null) return false;
+
+  // Push-up elbow range: 50° (deep bottom) to 178° (just before full lockout)
+  if (ea < 48 || ea > 178) return false;
+
+  // Wrist must not be way above the shoulder (rules out arms-overhead poses)
+  // Generous ±0.40 threshold handles all camera angles
+  if (wrist.y - shoulder.y < -0.40) return false;
+
+  return true;
+}
+
+// ── analyzeFrame ──────────────────────────────────────────────
+function analyzeFrame(lm) {
+  const issues = [];
+
+  const lVis = (lm[11]?.visibility??0)+(lm[23]?.visibility??0);
+  const rVis = (lm[12]?.visibility??0)+(lm[24]?.visibility??0);
+  const s = lVis >= rVis ? 'left' : 'right';
+
+  const shoulder = s==='left' ? lm[11] : lm[12];
+  const elbow    = s==='left' ? lm[13] : lm[14];
+  const wrist    = s==='left' ? lm[15] : lm[16];
+  const hip      = s==='left' ? lm[23] : lm[24];
+  const knee     = s==='left' ? lm[25] : lm[26];
+  const ankle    = s==='left' ? lm[27] : lm[28];
+  const ear      = s==='left' ? lm[7]  : lm[8];
+
+  const armIdx = s==='left' ? [11,13,15] : [12,14,16];
+  if (!armIdx.every(i => lmVis(lm, i, 0.3))) {
+    return { elbowAngle: null, issues: [], isGoodForm: true };
+  }
+
+  const elbowAngle = angle3Points(shoulder, elbow, wrist);
+  if (elbowAngle === null) return { elbowAngle: null, issues: [], isGoodForm: true };
+
+  const hipVis   = lmVis(lm, s==='left'?23:24, 0.25);
+  const ankleVis = lmVis(lm, s==='left'?27:28, 0.25);
+  const kneeVis  = lmVis(lm, s==='left'?25:26, 0.25);
+
+  const backAngle = (hipVis && ankleVis) ? angle3Points(shoulder, hip, ankle) : null;
+  const kneeAngle = (hipVis && kneeVis && ankleVis) ? angle3Points(hip, knee, ankle) : null;
+
+  // Body alignment
+  if (backAngle !== null && backAngle < 145) {
+    const midY = ankle ? (shoulder.y + ankle.y) / 2 : shoulder.y;
+    if (hip.y > midY + 0.04)
+      issues.push({ code:'HIP_SAG',    message:'Hips sagging — squeeze core and glutes to keep a straight line', severity:'high' });
+    else if (hip.y < midY - 0.06)
+      issues.push({ code:'HIP_RAISED', message:'Hips too high (pike) — lower hips to form a straight plank',     severity:'high' });
+  }
+
+  // Elbow flare
+  const expX = (shoulder.x + wrist.x) / 2;
+  if (Math.abs(elbow.x - expX) > 0.12)
+    issues.push({ code:'ELBOW_FLARE', message:'Elbows flaring out — tuck elbows ~45° toward your torso', severity:'medium' });
+
+  // Bent knees
+  if (kneeAngle !== null && kneeAngle < 150)
+    issues.push({ code:'BENT_KNEES', message:'Legs not straight — fully extend your knees', severity:'medium' });
+
+  // Head/neck
+  const earIdx = s==='left'?7:8;
+  if (lmVis(lm, earIdx, 0.3) && hipVis) {
+    const na = angle3Points(ear, shoulder, hip);
+    if (na !== null && na < 140) {
+      if (ear.y < shoulder.y - 0.10)
+        issues.push({ code:'HEAD_UP',   message:'Head craning up — keep neck neutral',           severity:'low' });
+      else if (ear.y > shoulder.y + 0.06)
+        issues.push({ code:'HEAD_DOWN', message:'Chin tucking too far — neutral neck position',  severity:'low' });
+    }
+  }
+
+  // Lumbar sag
+  if (backAngle !== null && ankleVis) {
+    const dX = ankle.x - shoulder.x;
+    if (Math.abs(dX) > 0.01) {
+      const t = (hip.x - shoulder.x) / dX;
+      const lineY = shoulder.y + t * (ankle.y - shoulder.y);
+      if (hip.y - lineY > 0.07)
+        issues.push({ code:'LOWER_BACK_SAG', message:'Lower back sagging — engage abs and glutes', severity:'high' });
+    }
+  }
+
+  return {
+    elbowAngle,
+    issues,
+    isGoodForm: issues.filter(i => i.severity === 'high').length === 0
+  };
+}
+
+function getPhase(angle) {
+  if (angle === null) return 'UNKNOWN';
+  if (angle > 155) return 'UP';
+  if (angle < 90)  return 'DOWN';
+  return 'MOVING';
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  REP COUNTER
+// ═══════════════════════════════════════════════════════════════
+
+const PHASE_CONFIRM_FRAMES   = 4;
+const MIN_DEPTH_ANGLE        = 100;
+const EMA_ALPHA              = 0.30;
+const POSITION_CONFIRM_FRAMES = 15;
+
+class RepCounter {
+  constructor() { this.reset(); }
+
+  reset() {
+    this.phase        = 'UP';
+    this.pendingPhase = 'UP';
+    this.pendingCount = 0;
+
+    this.goodReps = 0;
+    this.badReps  = 0;
+
+    this._repIssues       = [];
+    this._repIsGood       = true;
+    this._minElbow        = 180;
+    this._smoothedAngle   = null;
+    this._inPosFr         = 0;
+    this.isReady          = false;
+  }
+
+  update(elbowAngle, isGoodForm, issues, inPosition) {
+    // Position gating
+    if (!inPosition || elbowAngle === null) {
+      this._inPosFr = Math.max(0, this._inPosFr - 3);
+      if (this._inPosFr === 0) this.isReady = false;
+      return null;
+    }
+    this._inPosFr = Math.min(this._inPosFr + 1, POSITION_CONFIRM_FRAMES);
+    if (this._inPosFr >= POSITION_CONFIRM_FRAMES) this.isReady = true;
+    if (!this.isReady) return null;
+
+    // Smooth angle
+    this._smoothedAngle = this._smoothedAngle === null
+      ? elbowAngle
+      : EMA_ALPHA * elbowAngle + (1 - EMA_ALPHA) * this._smoothedAngle;
+    const angle = this._smoothedAngle;
+
+    // Track min depth
+    if (angle < this._minElbow) this._minElbow = angle;
+
+    // Accumulate issues
+    if (!isGoodForm) this._repIsGood = false;
+    for (const issue of issues) {
+      if (issue.severity !== 'low' && !this._repIssues.find(i => i.code === issue.code))
+        this._repIssues.push(issue);
+    }
+
+    // Phase candidate
+    const raw = getPhase(angle);
+    const candidate = raw === 'UP' ? 'UP' : raw === 'DOWN' ? 'DOWN' : this.phase;
+
+    if (candidate !== this.pendingPhase) {
+      this.pendingPhase = candidate;
+      this.pendingCount = 1;
+    } else {
+      this.pendingCount++;
+    }
+
+    let event = null;
+    if (this.pendingCount >= PHASE_CONFIRM_FRAMES && candidate !== this.phase) {
+      const prev = this.phase;
+      this.phase = candidate;
+
+      if (prev === 'UP' && this.phase === 'DOWN') {
+        // Rep starting
+        this._repIssues = [];
+        this._repIsGood = true;
+        this._minElbow  = 180;
+      }
+      if (prev === 'DOWN' && this.phase === 'UP') {
+        event = this._finalize();
+      }
+    }
+    return event;
+  }
+
+  _finalize() {
+    if (this._minElbow > MIN_DEPTH_ANGLE) {
+      this._repIsGood = false;
+      this._repIssues.push({
+        code: 'SHALLOW_REP',
+        message: `Shallow rep — lower until elbows reach ~90° (you reached ~${Math.round(this._minElbow)}°)`,
+        severity: 'high'
+      });
+    }
+    let event;
+    if (this._repIsGood && this._repIssues.length === 0) {
+      this.goodReps++;
+      event = { type: 'GOOD_REP' };
+    } else {
+      this.badReps++;
+      event = { type: 'BAD_REP', issues: [...this._repIssues] };
+    }
+    this._repIssues = [];
+    this._repIsGood = true;
+    this._minElbow  = 180;
+    return event;
+  }
+
+  get smoothedAngle() { return this._smoothedAngle; }
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  GRU ANOMALY MODEL
+// ═══════════════════════════════════════════════════════════════
+
+const KEYPOINT_INDICES = [11,12,13,14,15,16,23,24,25,26,27,28,0,7,8,9,10];
+
+class PushupModel {
+  constructor() {
+    this.model     = null;
+    this.buffer    = [];
+    this.SEQ_LEN   = 30;
+    this.FEATURES  = 68;
+    this.THRESHOLD = 0.08;
+  }
+
+  async load() {
+    try {
+      this.model = await tf.loadLayersModel('/models/gru_model/model.json');
+      console.log('✅ GRU model loaded');
+    } catch (e) {
+      console.warn('⚠️ GRU model unavailable — anomaly detection disabled');
+      this.model = null;
+    }
+  }
+
+  addFrame(frame) {
+    if (frame.length !== this.FEATURES) return;
+    this.buffer.push(frame);
+    if (this.buffer.length > this.SEQ_LEN) this.buffer.shift();
+  }
+
+  clearBuffer() { this.buffer = []; }
+
+  async getScore() {
+    if (!this.model || this.buffer.length < this.SEQ_LEN) return null;
+    let inp = null, out = null;
+    try {
+      inp = tf.tensor([this.buffer]);
+      out = this.model.predict(inp);
+      const pred = await out.array();
+      let err = 0;
+      for (let t = 0; t < this.SEQ_LEN; t++)
+        for (let f = 0; f < this.FEATURES; f++) {
+          const d = this.buffer[t][f] - pred[0][t][f];
+          err += d * d;
+        }
+      err /= (this.SEQ_LEN * this.FEATURES);
+      return { score: err, isAnomaly: err > this.THRESHOLD };
+    } catch(e) {
+      return null;
+    } finally {
+      if (inp) inp.dispose();
+      if (out) out.dispose();
+    }
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  APP
+// ═══════════════════════════════════════════════════════════════
+
+const ANOMALY_INTERVAL = 10;
+
+let repCounter  = null;
+let gruModel    = null;
+let frameCount  = 0;
+let lastAnomaly = null;
+let appRunning  = false;
+
+const elGoodReps    = () => document.getElementById('good-reps');
+const elBadReps     = () => document.getElementById('bad-reps');
+const elElbow       = () => document.getElementById('elbow-angle');
+const elPhaseEl     = () => document.getElementById('phase');
+const elAnomalyEl   = () => document.getElementById('anomaly-score');
+const elFeedback    = () => document.getElementById('form-feedback');
+const elStatusEl    = () => document.getElementById('status');
+
+async function startApp() {
+  if (appRunning) return;
+
+  const btn = document.getElementById('start-btn');
+  btn.disabled = true;
+  btn.textContent = 'Starting…';
+  setStatus('⏳ Requesting camera…', '');
+
+  const video = document.getElementById('video');
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+    video.srcObject = stream;
+    await video.play();
+  } catch(e) {
+    alert('Camera access denied. Please allow camera permissions and reload.');
+    btn.disabled = false;
+    btn.textContent = 'Start Camera';
+    setStatus('❌ Camera access denied', '');
+    return;
+  }
+
+  repCounter  = new RepCounter();
+  frameCount  = 0;
+  lastAnomaly = null;
+
+  gruModel = new PushupModel();
+  await gruModel.load();
+
+  const pose = new window.Pose({
+    locateFile: f => `https://cdn.jsdelivr.net/npm/@mediapipe/pose/${f}`
+  });
+  pose.setOptions({
+    modelComplexity: 1,
+    smoothLandmarks: true,
+    minDetectionConfidence: 0.5,
+    minTrackingConfidence: 0.5
+  });
+  pose.onResults(onResults);
+
+  appRunning = true;
+  btn.textContent = 'Running';
+  setStatus('📍 Get into push-up position', 'waiting');
+
+  async function loop() {
+    if (!appRunning) return;
+    await pose.send({ image: video });
+    requestAnimationFrame(loop);
+  }
+  loop();
+}
+
+async function onResults(results) {
+  if (!results.poseLandmarks) return;
+  const lm = results.poseLandmarks;
+  frameCount++;
+
+  const inPosition = isInPushupPosition(lm);
+  const analysis   = analyzeFrame(lm);
+
+  if (inPosition && analysis.elbowAngle !== null) {
+    const fd = KEYPOINT_INDICES.flatMap(i => [
+      lm[i]?.x ?? 0, lm[i]?.y ?? 0, lm[i]?.z ?? 0, lm[i]?.visibility ?? 0
+    ]);
+    gruModel.addFrame(fd);
+    if (frameCount % ANOMALY_INTERVAL === 0) lastAnomaly = await gruModel.getScore();
+  } else {
+    gruModel.clearBuffer();
+    lastAnomaly = null;
+  }
+
+  let isGood = analysis.isGoodForm;
+  if (lastAnomaly?.isAnomaly) isGood = false;
+
+  const repEvent = repCounter.update(analysis.elbowAngle, isGood, analysis.issues, inPosition);
+
+  updateUI(analysis, repEvent, inPosition);
+}
+
+function updateUI(analysis, repEvent, inPosition) {
+  if (!repCounter) return;
+
+  elGoodReps().textContent = repCounter.goodReps;
+  elBadReps().textContent  = repCounter.badReps;
+
+  const displayAngle = repCounter.smoothedAngle ?? analysis.elbowAngle;
+  elElbow().textContent = displayAngle !== null ? Math.round(displayAngle) + '°' : '--';
+
+  if (!inPosition) {
+    elPhaseEl().textContent = 'NOT IN POSITION';
+    setStatus('📍 Get into push-up position', 'waiting');
+  } else if (!repCounter.isReady) {
+    elPhaseEl().textContent = 'GET READY…';
+    setStatus('⏳ Hold position… getting ready', 'waiting');
+  } else {
+    elPhaseEl().textContent = repCounter.phase;
+    setStatus('🟢 Counting — go!', 'ready');
+  }
+
+  elAnomalyEl().textContent = lastAnomaly ? lastAnomaly.score.toFixed(4) : '--';
+
+  if (repEvent) {
+    if (repEvent.type === 'GOOD_REP') {
+      elFeedback().innerHTML = '<span class="good">✓ Great rep!</span>';
+    } else {
+      const top = repEvent.issues
+        .sort((a,b) => rank(b.severity) - rank(a.severity))
+        .slice(0,3)
+        .map(i => `• ${i.message}`)
+        .join('<br>');
+      elFeedback().innerHTML = `<span class="bad">✗ Bad rep:</span><br>${top}`;
+    }
+  }
+}
+
+function setStatus(text, cls) {
+  const el = elStatusEl();
+  el.textContent = text;
+  el.className = cls;
+}
+
+function rank(s) { return {high:3,medium:2,low:1}[s]??0; }
+
+document.getElementById('start-btn').addEventListener('click', startApp);
+document.getElementById('reset-btn').addEventListener('click', () => {
+  if (!repCounter) return;
+  repCounter.reset();
+  lastAnomaly = null;
+  elGoodReps().textContent = '0';
+  elBadReps().textContent  = '0';
+  elFeedback().textContent = '';
+  setStatus('📍 Get into push-up position', 'waiting');
+});
+</script>
 </body>
 </html>
