@@ -5,44 +5,48 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Push-up AI Trainer</title>
   <style>
-    * { box-sizing: border-box; margin: 0; padding: 0; }
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
     body {
-      background: #111;
+      background: #0e0e0e;
       color: #f0f0f0;
       font-family: 'Segoe UI', system-ui, sans-serif;
       display: flex;
       flex-direction: column;
       align-items: center;
       min-height: 100vh;
-      padding: 16px;
+      padding: 14px 16px 24px;
       gap: 12px;
     }
 
     h1 {
-      font-size: 1.4rem;
+      font-size: 1.35rem;
       font-weight: 700;
       color: #f5a623;
-      letter-spacing: 0.04em;
+      letter-spacing: 0.03em;
       align-self: flex-start;
+      width: 100%;
+      max-width: 960px;
     }
 
     .container {
       display: flex;
       flex-wrap: wrap;
-      gap: 16px;
+      gap: 14px;
       width: 100%;
       max-width: 960px;
       justify-content: center;
     }
 
+    /* ── Video ── */
     .video-wrap {
-      flex: 1 1 340px;
+      flex: 1 1 320px;
       max-width: 560px;
       border-radius: 12px;
       overflow: hidden;
       background: #000;
       aspect-ratio: 4/3;
+      position: relative;
     }
 
     video {
@@ -53,92 +57,130 @@
       transform: scaleX(-1);
     }
 
+    /* Skeleton overlay canvas */
+    #overlay {
+      position: absolute;
+      top: 0; left: 0;
+      width: 100%; height: 100%;
+      pointer-events: none;
+      transform: scaleX(-1);
+    }
+
+    /* ── Stats panel ── */
     .stats {
       flex: 1 1 220px;
       display: flex;
       flex-direction: column;
       gap: 10px;
+      min-width: 210px;
     }
 
+    /* Status / instruction banner */
     #status {
       padding: 10px 14px;
-      border-radius: 8px;
-      font-size: 0.92rem;
+      border-radius: 9px;
+      font-size: 0.875rem;
       font-weight: 500;
-      background: #2a2a2a;
+      line-height: 1.45;
+      background: #1e1e1e;
       color: #bbb;
-      min-height: 42px;
-      display: flex;
-      align-items: center;
+      min-height: 46px;
     }
-    #status.waiting { background: #2a2200; color: #f5c842; }
-    #status.ready   { background: #0d2a12; color: #4cde7a; }
+    #status.warn    { background: #2a1f00; color: #f5c842; }
+    #status.ready   { background: #0d2314; color: #4cde7a; }
+    #status.error   { background: #2a0d0d; color: #ff7070; }
+    #status.info    { background: #0d1e2a; color: #60b8f5; }
 
+    /* Rep counters */
     .rep-row { display: flex; gap: 10px; }
-
     .rep-card {
       flex: 1;
-      background: #1e1e1e;
+      background: #1a1a1a;
       border-radius: 10px;
-      padding: 12px;
+      padding: 11px 10px;
       text-align: center;
     }
     .rep-card .label {
-      font-size: 0.72rem;
+      font-size: 0.68rem;
       text-transform: uppercase;
-      letter-spacing: 0.08em;
-      color: #777;
-      margin-bottom: 4px;
+      letter-spacing: 0.09em;
+      color: #666;
+      margin-bottom: 3px;
     }
-    .rep-card .value { font-size: 2.4rem; font-weight: 700; line-height: 1; }
+    .rep-card .value { font-size: 2.2rem; font-weight: 800; line-height: 1; }
     .rep-card.good .value { color: #4cde7a; }
     .rep-card.bad  .value { color: #ff5c5c; }
 
+    /* Detail rows */
     .detail-row {
-      background: #1e1e1e;
+      background: #1a1a1a;
       border-radius: 8px;
-      padding: 9px 14px;
+      padding: 9px 13px;
       display: flex;
       justify-content: space-between;
       align-items: center;
-      font-size: 0.88rem;
+      font-size: 0.86rem;
     }
-    .detail-row .key { color: #777; }
-    .detail-row .val { font-weight: 600; color: #f0f0f0; }
+    .detail-row .key { color: #666; }
+    .detail-row .val { font-weight: 600; color: #eee; }
+    .detail-row .val.green  { color: #4cde7a; }
+    .detail-row .val.yellow { color: #f5c842; }
+    .detail-row .val.red    { color: #ff5c5c; }
 
+    /* Feedback */
     #form-feedback {
-      background: #1e1e1e;
-      border-radius: 8px;
-      padding: 12px 14px;
-      font-size: 0.85rem;
-      line-height: 1.6;
-      min-height: 54px;
-      color: #aaa;
+      background: #1a1a1a;
+      border-radius: 9px;
+      padding: 11px 14px;
+      font-size: 0.83rem;
+      line-height: 1.65;
+      min-height: 52px;
+      color: #999;
     }
-    #form-feedback .good  { color: #4cde7a; font-weight: 600; }
-    #form-feedback .warn  { color: #f5a623; font-weight: 600; }
-    #form-feedback .bad   { color: #ff5c5c; font-weight: 600; }
+    #form-feedback .good  { color: #4cde7a; font-weight: 700; }
+    #form-feedback .warn  { color: #f5c842; font-weight: 700; }
+    #form-feedback .bad   { color: #ff5c5c; font-weight: 700; }
+    #form-feedback .tip   { color: #aaa; }
 
+    /* Buttons */
     .btn-row { display: flex; gap: 10px; }
-
     button {
       flex: 1;
       padding: 12px 0;
       border: none;
       border-radius: 8px;
-      font-size: 1rem;
-      font-weight: 600;
+      font-size: 0.97rem;
+      font-weight: 700;
       cursor: pointer;
-      transition: opacity 0.15s;
+      transition: opacity 0.15s, background 0.15s;
     }
     button:disabled { opacity: 0.4; cursor: default; }
     #start-btn { background: #f5a623; color: #111; }
-    #reset-btn { background: #2a2a2a; color: #ccc; }
+    #start-btn:not(:disabled):hover { background: #e09510; }
+    #reset-btn { background: #252525; color: #bbb; }
+    #reset-btn:not(:disabled):hover { background: #303030; }
+
+    /* Camera instruction overlay (shown before camera starts) */
+    #cam-guide {
+      position: absolute;
+      inset: 0;
+      background: rgba(0,0,0,0.82);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 10px;
+      padding: 20px;
+      text-align: center;
+      border-radius: 12px;
+    }
+    #cam-guide .icon { font-size: 2.2rem; }
+    #cam-guide .title { font-size: 1rem; font-weight: 700; color: #f5a623; }
+    #cam-guide .desc  { font-size: 0.82rem; color: #ccc; line-height: 1.5; }
+    #cam-guide.hidden { display: none; }
   </style>
 
-  <!-- MediaPipe Pose — must load before our script -->
   <script src="https://cdn.jsdelivr.net/npm/@mediapipe/pose/pose.js" crossorigin="anonymous"></script>
-  <!-- TensorFlow.js -->
   <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.17.0/dist/tf.min.js"></script>
 </head>
 <body>
@@ -146,12 +188,26 @@
 <h1>Push-up AI Trainer</h1>
 
 <div class="container">
+
   <div class="video-wrap">
     <video id="video" playsinline muted></video>
+    <canvas id="overlay"></canvas>
+
+    <!-- Shown before camera starts -->
+    <div id="cam-guide">
+      <div class="icon">📷</div>
+      <div class="title">Camera Setup</div>
+      <div class="desc">
+        Place your camera/phone to the <strong>side</strong> of your body,<br>
+        at roughly <strong>floor level</strong>, so your full body<br>
+        (head → feet) is visible in the frame.<br><br>
+        <em>Side view gives the most accurate form detection.</em>
+      </div>
+    </div>
   </div>
 
   <div class="stats">
-    <div id="status">Click Start to begin</div>
+    <div id="status">Click <strong>Start Camera</strong> to begin.</div>
 
     <div class="rep-row">
       <div class="rep-card good">
@@ -173,11 +229,13 @@
       <span class="val" id="phase">--</span>
     </div>
     <div class="detail-row">
-      <span class="key">Anomaly score</span>
-      <span class="val" id="anomaly-score">--</span>
+      <span class="key">Body visible</span>
+      <span class="val" id="body-visible">--</span>
     </div>
 
-    <div id="form-feedback">Form feedback will appear here after each rep.</div>
+    <div id="form-feedback">
+      Form feedback will appear here after each rep.
+    </div>
 
     <div class="btn-row">
       <button id="start-btn">Start Camera</button>
@@ -187,65 +245,189 @@
 </div>
 
 <script>
-// ═══════════════════════════════════════════════════════════════
-//  ANGLE HEURISTICS
-// ═══════════════════════════════════════════════════════════════
+'use strict';
 
-function angle3Points(A, B, C) {
-  const AB = { x: A.x - B.x, y: A.y - B.y };
-  const CB = { x: C.x - B.x, y: C.y - B.y };
-  const dot = AB.x * CB.x + AB.y * CB.y;
-  const magAB = Math.hypot(AB.x, AB.y);
-  const magCB = Math.hypot(CB.x, CB.y);
-  if (magAB === 0 || magCB === 0) return null;
-  return Math.acos(Math.max(-1, Math.min(1, dot / (magAB * magCB)))) * (180 / Math.PI);
+// ═══════════════════════════════════════════════════════════════════════
+//  CONSTANTS & TUNING
+//  These are the values you tweak to balance strict vs lenient.
+// ═══════════════════════════════════════════════════════════════════════
+
+const CFG = {
+  // Rep counting
+  PHASE_CONFIRM_FRAMES:    4,    // frames to confirm a phase change (prevents jitter)
+  POSITION_CONFIRM_FRAMES: 12,   // frames in-position before counting starts
+  MIN_DEPTH_ANGLE:         110,  // elbow must reach this angle to count depth (110° = reasonable depth, not too strict)
+  EMA_ALPHA:               0.28, // smoothing factor for elbow angle
+
+  // Anomaly scoring (GRU model)
+  ANOMALY_BAD:    0.09,  // above this = bad rep (clear form issues)
+  ANOMALY_WARN:   0.055, // above this = good rep BUT show form tip
+  // below ANOMALY_WARN = clean good rep
+
+  // Form checks — generous thresholds to avoid false positives
+  BACK_ANGLE_MIN:      148, // shoulder-hip-ankle must be > this (degrees)
+  ELBOW_FLARE_MAX:     0.13,
+  KNEE_ANGLE_MIN:      148,
+  NECK_ANGLE_MIN:      138,
+  HIP_SAG_Y_MARGIN:    0.05,
+  HIP_RAISE_Y_MARGIN:  0.07,
+  LUMBAR_SAG_MARGIN:   0.08,
+
+  // Camera setup detection
+  SIDE_VIEW_THRESHOLD:      0.15, // max diff between left/right shoulder visibility to trust side view
+  LANDMARK_VIS_MIN:         0.35, // minimum visibility to consider a landmark "seen"
+  BODY_COMPLETE_VIS:        0.30, // visibility floor for "body complete" check
+};
+
+// Keypoint indices for GRU model input (17 points × 4 = 68 features)
+const KP_INDICES = [11,12,13,14,15,16, 23,24,25,26,27,28, 0, 7,8, 9,10];
+
+// ═══════════════════════════════════════════════════════════════════════
+//  GEOMETRY
+// ═══════════════════════════════════════════════════════════════════════
+
+function angle3(A, B, C) {
+  const ABx = A.x-B.x, ABy = A.y-B.y;
+  const CBx = C.x-B.x, CBy = C.y-B.y;
+  const dot = ABx*CBx + ABy*CBy;
+  const mag = Math.hypot(ABx,ABy) * Math.hypot(CBx,CBy);
+  if (mag === 0) return null;
+  return Math.acos(Math.max(-1, Math.min(1, dot/mag))) * (180/Math.PI);
 }
 
-function lmVis(lm, idx, threshold = 0.25) {
-  // Lowered threshold from 0.3 to 0.25 to be more tolerant of partial visibility
-  return lm[idx] && (lm[idx].visibility ?? 1) >= threshold;
+function vis(lm, i, thr = CFG.LANDMARK_VIS_MIN) {
+  return lm[i] && (lm[i].visibility ?? 1) >= thr;
 }
 
-// ── getBestSide ───────────────────────────────────────────────
-// Returns the side with better landmark visibility
-function getBestSide(lm) {
-  const lScore = (lm[11]?.visibility??0)+(lm[13]?.visibility??0)+(lm[15]?.visibility??0);
-  const rScore = (lm[12]?.visibility??0)+(lm[14]?.visibility??0)+(lm[16]?.visibility??0);
-  return lScore >= rScore ? 'left' : 'right';
+function visScore(lm, i) {
+  return lm[i]?.visibility ?? 0;
 }
 
-// ── isInPushupPosition ────────────────────────────────────────
-// More lenient: accepts a wider elbow angle range and is tolerant
-// of camera angles and partial visibility
+// ═══════════════════════════════════════════════════════════════════════
+//  CAMERA SETUP CHECKER
+//  Inspects what's visible and gives targeted setup instructions.
+//  Returns { ok: bool, message: string, detail: string }
+// ═══════════════════════════════════════════════════════════════════════
+
+function checkCameraSetup(lm) {
+  const missing = [];
+
+  // Check key landmarks for side-body view
+  const leftShoulder  = visScore(lm, 11);
+  const rightShoulder = visScore(lm, 12);
+  const leftHip       = visScore(lm, 23);
+  const rightHip      = visScore(lm, 24);
+  const leftKnee      = visScore(lm, 25);
+  const rightKnee     = visScore(lm, 26);
+  const leftAnkle     = visScore(lm, 27);
+  const rightAnkle    = visScore(lm, 28);
+  const leftElbow     = visScore(lm, 13);
+  const rightElbow    = visScore(lm, 14);
+  const leftWrist     = visScore(lm, 15);
+  const rightWrist    = visScore(lm, 16);
+
+  const T = CFG.BODY_COMPLETE_VIS;
+
+  // Determine which side is more visible
+  const leftScore  = leftShoulder + leftElbow + leftWrist + leftHip + leftKnee + leftAnkle;
+  const rightScore = rightShoulder + rightElbow + rightWrist + rightHip + rightKnee + rightAnkle;
+  const dominantSide = leftScore >= rightScore ? 'left' : 'right';
+
+  const sh = dominantSide === 'left' ? leftShoulder  : rightShoulder;
+  const el = dominantSide === 'left' ? leftElbow     : rightElbow;
+  const wr = dominantSide === 'left' ? leftWrist     : rightWrist;
+  const hp = dominantSide === 'left' ? leftHip       : rightHip;
+  const kn = dominantSide === 'left' ? leftKnee      : rightKnee;
+  const an = dominantSide === 'left' ? leftAnkle     : rightAnkle;
+
+  // Check if person is facing the camera instead of showing side view.
+  // Both shoulders visible at similar score = front-facing.
+  const bothShouldersSimilar = Math.abs(leftShoulder - rightShoulder) < CFG.SIDE_VIEW_THRESHOLD
+    && leftShoulder > T && rightShoulder > T;
+
+  if (bothShouldersSimilar && hp < T) {
+    return {
+      ok: false,
+      message: '🔄 Turn sideways',
+      detail: 'Both shoulders are visible but hips/legs are not. Turn your body 90° so your side faces the camera.'
+    };
+  }
+
+  if (sh < T) missing.push('shoulder');
+  if (el < T) missing.push('elbow');
+  if (wr < T) missing.push('wrist/hand');
+  if (hp < T) missing.push('hip');
+  if (kn < T) missing.push('knee');
+  if (an < T) missing.push('feet/ankles');
+
+  if (missing.length === 0) {
+    return { ok: true, message: '', detail: '' };
+  }
+
+  // Give targeted advice based on what's missing
+  let detail = '';
+  if (missing.includes('feet/ankles') && missing.includes('knee')) {
+    detail = 'Move the camera further back — your lower body is cut off.';
+  } else if (missing.includes('feet/ankles')) {
+    detail = 'Move the camera back slightly — your feet are cut off.';
+  } else if (missing.includes('shoulder') || missing.includes('elbow')) {
+    detail = 'Move the camera further back — your upper body is cut off.';
+  } else if (missing.includes('hip')) {
+    detail = 'Make sure your full side profile is in frame — hip not detected.';
+  } else {
+    detail = `Not clearly visible: ${missing.join(', ')}. Adjust camera position.`;
+  }
+
+  return {
+    ok: false,
+    message: `📷 Adjust camera`,
+    detail
+  };
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+//  PUSH-UP POSITION DETECTION
+//  Camera-angle-agnostic: uses elbow angle range, not y-coordinates.
+// ═══════════════════════════════════════════════════════════════════════
+
 function isInPushupPosition(lm) {
-  const leftOk  = lmVis(lm,11,0.2) && lmVis(lm,13,0.2) && lmVis(lm,15,0.2);
-  const rightOk = lmVis(lm,12,0.2) && lmVis(lm,14,0.2) && lmVis(lm,16,0.2);
+  const leftOk  = vis(lm,11) && vis(lm,13) && vis(lm,15);
+  const rightOk = vis(lm,12) && vis(lm,14) && vis(lm,16);
   if (!leftOk && !rightOk) return false;
 
-  const s = getBestSide(lm);
+  const lS = visScore(lm,11)+visScore(lm,13)+visScore(lm,15);
+  const rS = visScore(lm,12)+visScore(lm,14)+visScore(lm,16);
+  const s  = lS >= rS ? 'left' : 'right';
+
   const shoulder = s==='left' ? lm[11] : lm[12];
   const elbow    = s==='left' ? lm[13] : lm[14];
   const wrist    = s==='left' ? lm[15] : lm[16];
 
-  const ea = angle3Points(shoulder, elbow, wrist);
+  const ea = angle3(shoulder, elbow, wrist);
   if (ea === null) return false;
 
-  // WIDENED range: 40° (very deep) to 180° (full lockout including straight arm start)
-  if (ea < 40 || ea > 180) return false;
+  // Valid pushup elbow range: ~50° (deep bottom) to 178° (near lockout)
+  // This is the key camera-agnostic check — this range only occurs in pushups
+  if (ea < 48 || ea > 178) return false;
 
-  // Wrist must not be way above the shoulder — more lenient at ±0.50
-  if (wrist.y - shoulder.y < -0.50) return false;
+  // Wrist must not be dramatically above shoulder
+  // (rules out arms-overhead, handstand, etc.)
+  if (wrist.y - shoulder.y < -0.42) return false;
 
   return true;
 }
 
-// ── analyzeFrame ──────────────────────────────────────────────
-// Returns issues with SEVERITY classifications.
-// HIGH severity = truly bad form (both high-severity issues needed to mark bad rep)
-// MEDIUM = coaching tip shown but doesn't make it a "bad" rep alone
-// LOW = minor tip, always shown in feedback
+// ═══════════════════════════════════════════════════════════════════════
+//  FRAME ANALYZER
+//  Computes angles and checks form. Returns issues array.
+//  Issues are only raised when clearly outside normal range.
+// ═══════════════════════════════════════════════════════════════════════
+
 function analyzeFrame(lm) {
-  const s = getBestSide(lm);
+  // Pick dominant side (more visible)
+  const lVis = visScore(lm,11)+visScore(lm,23);
+  const rVis = visScore(lm,12)+visScore(lm,24);
+  const s = lVis >= rVis ? 'left' : 'right';
 
   const shoulder = s==='left' ? lm[11] : lm[12];
   const elbow    = s==='left' ? lm[13] : lm[14];
@@ -255,106 +437,76 @@ function analyzeFrame(lm) {
   const ankle    = s==='left' ? lm[27] : lm[28];
   const ear      = s==='left' ? lm[7]  : lm[8];
 
-  const armIdx = s==='left' ? [11,13,15] : [12,14,16];
-  if (!armIdx.every(i => lmVis(lm, i, 0.2))) {
-    return { elbowAngle: null, issues: [], isGoodForm: true };
-  }
+  const armOk = [s==='left'?11:12, s==='left'?13:14, s==='left'?15:16].every(i => vis(lm,i));
+  if (!armOk) return { elbowAngle: null, issues: [], isGoodForm: true };
 
-  const elbowAngle = angle3Points(shoulder, elbow, wrist);
+  const elbowAngle = angle3(shoulder, elbow, wrist);
   if (elbowAngle === null) return { elbowAngle: null, issues: [], isGoodForm: true };
+
+  const hipVis   = vis(lm, s==='left'?23:24, 0.25);
+  const ankleVis = vis(lm, s==='left'?27:28, 0.25);
+  const kneeVis  = vis(lm, s==='left'?25:26, 0.25);
+  const earVis   = vis(lm, s==='left'?7:8,   0.25);
+
+  const backAngle = (hipVis && ankleVis) ? angle3(shoulder, hip, ankle) : null;
+  const kneeAngle = (hipVis && kneeVis && ankleVis) ? angle3(hip, knee, ankle) : null;
 
   const issues = [];
 
-  const hipVis   = lmVis(lm, s==='left'?23:24, 0.2);
-  const ankleVis = lmVis(lm, s==='left'?27:28, 0.2);
-  const kneeVis  = lmVis(lm, s==='left'?25:26, 0.2);
-
-  const backAngle = (hipVis && ankleVis) ? angle3Points(shoulder, hip, ankle) : null;
-  const kneeAngle = (hipVis && kneeVis && ankleVis) ? angle3Points(hip, knee, ankle) : null;
-
-  // ── Body alignment ─────────────────────────────────────────
-  // Only flag hip sag/raise if it's really pronounced (was <145, now <130)
-  if (backAngle !== null && backAngle < 130) {
-    const midY = ankle ? (shoulder.y + ankle.y) / 2 : shoulder.y;
-    if (hip.y > midY + 0.08) {
-      // More lenient threshold: was 0.04, now 0.08
-      issues.push({ code:'HIP_SAG', message:'Hips sagging — squeeze core and glutes', severity:'high' });
-    } else if (hip.y < midY - 0.10) {
-      // More lenient: was -0.06, now -0.10
-      issues.push({ code:'HIP_RAISED', message:'Hips too high (pike) — lower hips for a straight plank', severity:'high' });
-    }
+  // 1. Body alignment (back angle)
+  if (backAngle !== null && backAngle < CFG.BACK_ANGLE_MIN) {
+    const midY = ankleVis ? (shoulder.y + ankle.y) / 2 : shoulder.y;
+    if (hip.y > midY + CFG.HIP_SAG_Y_MARGIN)
+      issues.push({ code:'HIP_SAG',    message:'Hips sagging — brace your core and glutes',         severity:'high' });
+    else if (hip.y < midY - CFG.HIP_RAISE_Y_MARGIN)
+      issues.push({ code:'HIP_RAISED', message:'Hips too high (pike) — lower hips for a flat plank', severity:'high' });
   }
 
-  // ── Elbow flare ────────────────────────────────────────────
-  // More lenient: was 0.12, now 0.18
-  const expX = (shoulder.x + wrist.x) / 2;
-  if (Math.abs(elbow.x - expX) > 0.18) {
-    issues.push({ code:'ELBOW_FLARE', message:'Elbows flaring — try tucking elbows ~45° toward torso', severity:'medium' });
-  }
-
-  // ── Bent knees ─────────────────────────────────────────────
-  // More lenient: was <150, now <130
-  if (kneeAngle !== null && kneeAngle < 130) {
-    issues.push({ code:'BENT_KNEES', message:'Legs slightly bent — try to extend your knees', severity:'low' });
-  }
-
-  // ── Head/neck ──────────────────────────────────────────────
-  const earIdx = s==='left'?7:8;
-  if (lmVis(lm, earIdx, 0.2) && hipVis) {
-    const na = angle3Points(ear, shoulder, hip);
-    if (na !== null && na < 130) {
-      // More lenient: was 140, now 130
-      if (ear.y < shoulder.y - 0.14)
-        issues.push({ code:'HEAD_UP', message:'Head craning up — keep neck neutral', severity:'low' });
-      else if (ear.y > shoulder.y + 0.10)
-        issues.push({ code:'HEAD_DOWN', message:'Chin tucking a bit — try neutral neck position', severity:'low' });
-    }
-  }
-
-  // ── Lumbar sag ─────────────────────────────────────────────
-  // More lenient: was 0.07, now 0.12
+  // 2. Lumbar sag (lower back drops below shoulder-ankle line)
   if (backAngle !== null && ankleVis) {
     const dX = ankle.x - shoulder.x;
     if (Math.abs(dX) > 0.01) {
       const t = (hip.x - shoulder.x) / dX;
       const lineY = shoulder.y + t * (ankle.y - shoulder.y);
-      if (hip.y - lineY > 0.12) {
-        issues.push({ code:'LOWER_BACK_SAG', message:'Lower back sagging — engage abs and glutes', severity:'high' });
-      }
+      if (hip.y - lineY > CFG.LUMBAR_SAG_MARGIN)
+        issues.push({ code:'LOWER_BACK_SAG', message:'Lower back sagging — engage your core', severity:'high' });
     }
   }
 
-  // Count high-severity issues
-  const highCount = issues.filter(i => i.severity === 'high').length;
+  // 3. Elbow flare
+  const expX = (shoulder.x + wrist.x) / 2;
+  if (Math.abs(elbow.x - expX) > CFG.ELBOW_FLARE_MAX)
+    issues.push({ code:'ELBOW_FLARE', message:'Elbows flaring out — tuck them ~45° to your torso', severity:'medium' });
 
-  // CHANGED: Only mark as "not good form" if 2+ high severity issues occur
-  // (was: any high severity issue = bad form)
-  return {
-    elbowAngle,
-    issues,
-    isGoodForm: highCount < 2
-  };
+  // 4. Bent knees
+  if (kneeAngle !== null && kneeAngle < CFG.KNEE_ANGLE_MIN)
+    issues.push({ code:'BENT_KNEES', message:'Knees bent — fully extend your legs', severity:'medium' });
+
+  // 5. Head/neck (only if ear is clearly visible)
+  if (earVis && hipVis) {
+    const na = angle3(ear, shoulder, hip);
+    if (na !== null && na < CFG.NECK_ANGLE_MIN) {
+      if (ear.y < shoulder.y - 0.11)
+        issues.push({ code:'HEAD_UP',   message:'Head lifting up — keep a neutral neck', severity:'low' });
+      else if (ear.y > shoulder.y + 0.07)
+        issues.push({ code:'HEAD_DOWN', message:'Chin tucking — neutral neck position',  severity:'low' });
+    }
+  }
+
+  const isGoodForm = issues.filter(i => i.severity === 'high').length === 0;
+  return { elbowAngle, issues, isGoodForm };
 }
 
-function getPhase(angle) {
-  if (angle === null) return 'UNKNOWN';
-  if (angle > 145) return 'UP';   // Was 155 — more lenient top threshold
-  if (angle < 100) return 'DOWN'; // Was 90 — catch descent earlier
+function getPhase(a) {
+  if (a === null) return 'UNKNOWN';
+  if (a > 155)   return 'UP';
+  if (a < 92)    return 'DOWN';
   return 'MOVING';
 }
 
-// ═══════════════════════════════════════════════════════════════
-//  REP COUNTER
-// ═══════════════════════════════════════════════════════════════
-
-const PHASE_CONFIRM_FRAMES    = 3;   // Was 4 — react faster
-const MIN_DEPTH_ANGLE         = 115; // Was 100 — more lenient depth requirement
-const EMA_ALPHA               = 0.35; // Was 0.30 — slightly more responsive
-const POSITION_CONFIRM_FRAMES = 10;  // Was 15 — get ready faster
-// How many HIGH severity issues during a rep to call it truly "bad"
-const BAD_REP_HIGH_THRESHOLD  = 2;
-// Anomaly score must exceed this AND have high issues to mark bad rep
-const ANOMALY_BAD_THRESHOLD   = 0.12; // Was implicit in model; now explicit gate
+// ═══════════════════════════════════════════════════════════════════════
+//  REP COUNTER  —  state machine with position gating
+// ═══════════════════════════════════════════════════════════════════════
 
 class RepCounter {
   constructor() { this.reset(); }
@@ -367,43 +519,50 @@ class RepCounter {
     this.goodReps = 0;
     this.badReps  = 0;
 
-    this._repIssues       = [];
-    this._highIssueCount  = 0;
-    this._minElbow        = 180;
-    this._smoothedAngle   = null;
-    this._inPosFr         = 0;
-    this.isReady          = false;
+    this._issues       = [];
+    this._isGood       = true;
+    this._minElbow     = 180;
+    this._smoothed     = null;
+    this._inPosFr      = 0;
+    this.isReady       = false;
+
+    // Track that the rep was started while properly in position
+    this._repStartedInPosition = false;
   }
 
   update(elbowAngle, isGoodForm, issues, inPosition, anomalyScore) {
-    // Position gating
+    // ── Position gating ──────────────────────────────────────────────
     if (!inPosition || elbowAngle === null) {
-      this._inPosFr = Math.max(0, this._inPosFr - 2); // Was -3, slower dropout
+      this._inPosFr = Math.max(0, this._inPosFr - 2);
       if (this._inPosFr === 0) this.isReady = false;
       return null;
     }
-    this._inPosFr = Math.min(this._inPosFr + 1, POSITION_CONFIRM_FRAMES);
-    if (this._inPosFr >= POSITION_CONFIRM_FRAMES) this.isReady = true;
+    this._inPosFr = Math.min(this._inPosFr + 1, CFG.POSITION_CONFIRM_FRAMES);
+    if (this._inPosFr >= CFG.POSITION_CONFIRM_FRAMES) this.isReady = true;
     if (!this.isReady) return null;
 
-    // Smooth angle
-    this._smoothedAngle = this._smoothedAngle === null
+    // ── Smooth angle ─────────────────────────────────────────────────
+    this._smoothed = this._smoothed === null
       ? elbowAngle
-      : EMA_ALPHA * elbowAngle + (1 - EMA_ALPHA) * this._smoothedAngle;
-    const angle = this._smoothedAngle;
+      : CFG.EMA_ALPHA * elbowAngle + (1 - CFG.EMA_ALPHA) * this._smoothed;
+    const angle = this._smoothed;
 
-    // Track min depth
+    // Track lowest angle reached
     if (angle < this._minElbow) this._minElbow = angle;
 
-    // Accumulate issues — track high-severity count separately
-    for (const issue of issues) {
-      if (!this._repIssues.find(i => i.code === issue.code)) {
-        this._repIssues.push(issue);
-        if (issue.severity === 'high') this._highIssueCount++;
-      }
+    // Accumulate form issues (deduplicate by code, skip low-severity)
+    if (!isGoodForm) this._isGood = false;
+    for (const iss of issues) {
+      if (iss.severity !== 'low' && !this._issues.find(x => x.code === iss.code))
+        this._issues.push(iss);
     }
 
-    // Phase candidate
+    // Track anomaly over the rep (keep worst score seen)
+    if (anomalyScore !== null && anomalyScore !== undefined) {
+      this._worstAnomaly = Math.max(this._worstAnomaly ?? 0, anomalyScore);
+    }
+
+    // ── Phase detection ──────────────────────────────────────────────
     const raw = getPhase(angle);
     const candidate = raw === 'UP' ? 'UP' : raw === 'DOWN' ? 'DOWN' : this.phase;
 
@@ -415,89 +574,98 @@ class RepCounter {
     }
 
     let event = null;
-    if (this.pendingCount >= PHASE_CONFIRM_FRAMES && candidate !== this.phase) {
+
+    if (this.pendingCount >= CFG.PHASE_CONFIRM_FRAMES && candidate !== this.phase) {
       const prev = this.phase;
       this.phase = candidate;
 
       if (prev === 'UP' && this.phase === 'DOWN') {
-        // Rep starting — reset trackers
-        this._repIssues      = [];
-        this._highIssueCount = 0;
-        this._minElbow       = 180;
+        // Rep starting — only valid if in position right now
+        this._issues              = [];
+        this._isGood              = true;
+        this._minElbow            = 180;
+        this._worstAnomaly        = 0;
+        this._repStartedInPosition = true;
       }
+
       if (prev === 'DOWN' && this.phase === 'UP') {
-        event = this._finalize(anomalyScore);
+        // Rep completing — only count if it started in position
+        if (this._repStartedInPosition) {
+          event = this._finalize();
+        }
+        this._repStartedInPosition = false;
       }
     }
+
     return event;
   }
 
-  _finalize(anomalyScore) {
-    const allIssues = [...this._repIssues];
-    let isShallow = false;
+  _finalize() {
+    const anomaly   = this._worstAnomaly ?? 0;
+    const depthFail = this._minElbow > CFG.MIN_DEPTH_ANGLE;
 
-    // Shallow rep warning — but more lenient (115° instead of 100°)
-    if (this._minElbow > MIN_DEPTH_ANGLE) {
-      isShallow = true;
-      allIssues.push({
-        code: 'SHALLOW_REP',
-        message: `Try to go a bit deeper — you reached ~${Math.round(this._minElbow)}°, aim for ~90–100°`,
-        severity: 'medium' // Was 'high' — now medium so it doesn't auto-fail
-      });
+    // Depth check — this is the key "walking forward ≠ rep" guard
+    if (depthFail) {
+      this.badReps++;
+      return {
+        type: 'BAD_REP',
+        quality: 'bad',
+        issues: [{
+          code: 'SHALLOW_REP',
+          message: `Not deep enough — reached ~${Math.round(this._minElbow)}°, aim for ~90°`,
+          severity: 'high'
+        }],
+        anomalyScore: anomaly
+      };
     }
 
-    // Count high-severity issues accumulated during this rep
-    const highCount = allIssues.filter(i => i.severity === 'high').length;
+    // Determine quality:
+    //   bad  — high-severity form issues OR anomaly clearly bad
+    //   warn — good form but anomaly slightly elevated (still count as good rep)
+    //   good — clean
+    const hasHighIssue = this._issues.some(i => i.severity === 'high');
+    const isBad  = hasHighIssue || anomaly > CFG.ANOMALY_BAD;
+    const isWarn = !isBad && (this._issues.length > 0 || anomaly > CFG.ANOMALY_WARN);
 
-    // Anomaly flag (only counts if score is truly high)
-    const anomalyBad = anomalyScore !== null && anomalyScore > ANOMALY_BAD_THRESHOLD;
+    const allIssues = [...this._issues];
 
-    // BAD REP only if: 2+ high severity issues AND (anomaly is bad OR issues are truly severe)
-    // Otherwise it's a GOOD REP with tips shown
-    let event;
-    if (highCount >= BAD_REP_HIGH_THRESHOLD && anomalyBad) {
+    // Clear state
+    this._issues       = [];
+    this._isGood       = true;
+    this._minElbow     = 180;
+    this._worstAnomaly = 0;
+
+    if (isBad) {
       this.badReps++;
-      event = { type: 'BAD_REP', issues: allIssues };
-    } else if (highCount >= 3) {
-      // Even without anomaly, 3+ high issues = bad rep
-      this.badReps++;
-      event = { type: 'BAD_REP', issues: allIssues };
+      return { type: 'BAD_REP',  quality: 'bad',  issues: allIssues, anomalyScore: anomaly };
     } else {
       this.goodReps++;
-      // GOOD REP but still show any tips/warnings
-      event = { type: 'GOOD_REP', issues: allIssues };
+      // Even good reps return their issues so we can show tips
+      return { type: 'GOOD_REP', quality: isWarn ? 'warn' : 'good', issues: allIssues, anomalyScore: anomaly };
     }
-
-    this._repIssues      = [];
-    this._highIssueCount = 0;
-    this._minElbow       = 180;
-    return event;
   }
 
-  get smoothedAngle() { return this._smoothedAngle; }
+  get smoothedAngle() { return this._smoothed; }
 }
 
-// ═══════════════════════════════════════════════════════════════
+// ═══════════════════════════════════════════════════════════════════════
 //  GRU ANOMALY MODEL
-// ═══════════════════════════════════════════════════════════════
-
-const KEYPOINT_INDICES = [11,12,13,14,15,16,23,24,25,26,27,28,0,7,8,9,10];
+// ═══════════════════════════════════════════════════════════════════════
 
 class PushupModel {
   constructor() {
-    this.model     = null;
-    this.buffer    = [];
-    this.SEQ_LEN   = 30;
-    this.FEATURES  = 68;
-    this.THRESHOLD = 0.12; // Raised from 0.08 — less trigger-happy
+    this.model    = null;
+    this.buffer   = [];
+    this.SEQ_LEN  = 30;
+    this.FEATURES = 68;
   }
 
   async load() {
     try {
       this.model = await tf.loadLayersModel('/models/gru_model/model.json');
       console.log('✅ GRU model loaded');
-    } catch (e) {
-      console.warn('⚠️ GRU model unavailable — anomaly detection disabled');
+    } catch(e) {
+      console.warn('⚠️ GRU model not available — anomaly detection disabled');
       this.model = null;
     }
   }
@@ -523,61 +691,124 @@ class PushupModel {
           const d = this.buffer[t][f] - pred[0][t][f];
           err += d * d;
         }
-      err /= (this.SEQ_LEN * this.FEATURES);
-      return err; // raw score
+      return err / (this.SEQ_LEN * this.FEATURES);
     } catch(e) {
       return null;
     } finally {
-      if (inp) inp.dispose();
-      if (out) out.dispose();
+      inp?.dispose();
+      out?.dispose();
     }
   }
 }
 
-// ═══════════════════════════════════════════════════════════════
-//  APP
-// ═══════════════════════════════════════════════════════════════
+// ═══════════════════════════════════════════════════════════════════════
+//  SKELETON OVERLAY  (draws key joints on the canvas)
+// ═══════════════════════════════════════════════════════════════════════
+
+const SKELETON_PAIRS = [
+  [11,13],[13,15], // left arm
+  [12,14],[14,16], // right arm
+  [11,12],         // shoulders
+  [11,23],[12,24], // torso sides
+  [23,24],         // hips
+  [23,25],[25,27], // left leg
+  [24,26],[26,28], // right leg
+];
+
+function drawSkeleton(canvas, lm, inPosition) {
+  const ctx = canvas.getContext('2d');
+  // Match canvas size to displayed size
+  canvas.width  = canvas.offsetWidth;
+  canvas.height = canvas.offsetHeight;
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+  if (!lm) return;
+
+  const color = inPosition ? '#4cde7a' : '#f5a623';
+  const w = canvas.width, h = canvas.height;
+
+  // Draw bones
+  ctx.strokeStyle = color;
+  ctx.lineWidth   = 2.5;
+  ctx.globalAlpha = 0.75;
+  for (const [a, b] of SKELETON_PAIRS) {
+    if (!lm[a] || !lm[b]) continue;
+    if ((lm[a].visibility??1) < 0.25 || (lm[b].visibility??1) < 0.25) continue;
+    ctx.beginPath();
+    // Note: x is mirrored via CSS scaleX(-1) on canvas, so we keep raw coords
+    ctx.moveTo(lm[a].x * w, lm[a].y * h);
+    ctx.lineTo(lm[b].x * w, lm[b].y * h);
+    ctx.stroke();
+  }
+
+  // Draw joints
+  ctx.fillStyle   = '#fff';
+  ctx.globalAlpha = 0.9;
+  const joints = [11,12,13,14,15,16,23,24,25,26,27,28];
+  for (const i of joints) {
+    if (!lm[i] || (lm[i].visibility??1) < 0.25) continue;
+    ctx.beginPath();
+    ctx.arc(lm[i].x * w, lm[i].y * h, 4, 0, Math.PI*2);
+    ctx.fill();
+  }
+  ctx.globalAlpha = 1;
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+//  APP CORE
+// ═══════════════════════════════════════════════════════════════════════
 
 const ANOMALY_INTERVAL = 10;
 
 let repCounter  = null;
 let gruModel    = null;
 let frameCount  = 0;
-let lastAnomaly = null; // raw score number or null
+let lastScore   = null;   // latest raw anomaly score
 let appRunning  = false;
 
-const elGoodReps  = () => document.getElementById('good-reps');
-const elBadReps   = () => document.getElementById('bad-reps');
-const elElbow     = () => document.getElementById('elbow-angle');
-const elPhaseEl   = () => document.getElementById('phase');
-const elAnomalyEl = () => document.getElementById('anomaly-score');
-const elFeedback  = () => document.getElementById('form-feedback');
-const elStatusEl  = () => document.getElementById('status');
+// DOM helpers
+const $  = id => document.getElementById(id);
+const el = {
+  goodReps:    () => $('good-reps'),
+  badReps:     () => $('bad-reps'),
+  elbow:       () => $('elbow-angle'),
+  phase:       () => $('phase'),
+  bodyVis:     () => $('body-visible'),
+  feedback:    () => $('form-feedback'),
+  status:      () => $('status'),
+  startBtn:    () => $('start-btn'),
+  resetBtn:    () => $('reset-btn'),
+  camGuide:    () => $('cam-guide'),
+  overlay:     () => $('overlay'),
+};
+
+function setStatus(text, cls = '') {
+  const e = el.status();
+  e.innerHTML  = text;
+  e.className  = cls;
+}
 
 async function startApp() {
   if (appRunning) return;
+  el.startBtn().disabled    = true;
+  el.startBtn().textContent = 'Starting…';
+  setStatus('⏳ Requesting camera access…', 'info');
 
-  const btn = document.getElementById('start-btn');
-  btn.disabled = true;
-  btn.textContent = 'Starting…';
-  setStatus('⏳ Requesting camera…', '');
-
-  const video = document.getElementById('video');
+  const video = $('video');
   try {
     const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
     video.srcObject = stream;
     await video.play();
   } catch(e) {
-    alert('Camera access denied. Please allow camera permissions and reload.');
-    btn.disabled = false;
-    btn.textContent = 'Start Camera';
-    setStatus('❌ Camera access denied', '');
+    el.startBtn().disabled    = false;
+    el.startBtn().textContent = 'Start Camera';
+    setStatus('❌ Camera access denied — please allow camera permissions and reload.', 'error');
     return;
   }
 
-  repCounter  = new RepCounter();
-  frameCount  = 0;
-  lastAnomaly = null;
+  repCounter = new RepCounter();
+  frameCount = 0;
+  lastScore  = null;
 
   gruModel = new PushupModel();
   await gruModel.load();
@@ -588,122 +819,161 @@ async function startApp() {
   pose.setOptions({
     modelComplexity: 1,
     smoothLandmarks: true,
-    minDetectionConfidence: 0.45, // Was 0.5 — more tolerant
-    minTrackingConfidence:  0.45
+    minDetectionConfidence: 0.5,
+    minTrackingConfidence: 0.5
   });
   pose.onResults(onResults);
 
   appRunning = true;
-  btn.textContent = 'Running';
-  setStatus('📍 Get into push-up position', 'waiting');
+  el.startBtn().textContent = 'Running';
+  // Hide the static camera guide overlay — live guidance takes over
+  el.camGuide().classList.add('hidden');
 
-  async function loop() {
+  setStatus('📷 Checking camera setup…', 'warn');
+
+  (async function loop() {
     if (!appRunning) return;
     await pose.send({ image: video });
     requestAnimationFrame(loop);
-  }
-  loop();
+  })();
 }
 
+// ── Per-frame handler ────────────────────────────────────────────────
 async function onResults(results) {
-  if (!results.poseLandmarks) return;
+  if (!results.poseLandmarks) {
+    drawSkeleton(el.overlay(), null, false);
+    setStatus('🔍 No person detected — make sure you are in frame.', 'warn');
+    return;
+  }
+
   const lm = results.poseLandmarks;
   frameCount++;
 
-  const inPosition = isInPushupPosition(lm);
-  const analysis   = analyzeFrame(lm);
+  // 1. Camera setup check (always run)
+  const setup = checkCameraSetup(lm);
 
+  // 2. Draw skeleton
+  const inPosition = isInPushupPosition(lm);
+  drawSkeleton(el.overlay(), lm, inPosition);
+
+  // 3. If camera not set up yet, show guidance and don't count
+  if (!setup.ok) {
+    setStatus(`${setup.message}<br><small>${setup.detail}</small>`, 'warn');
+    el.bodyVis().textContent = '✗ Incomplete';
+    el.bodyVis().className   = 'val red';
+    // Still update elbow angle so user can see something is working
+    const a = analyzeFrame(lm);
+    if (a.elbowAngle !== null) el.elbow().textContent = Math.round(a.elbowAngle) + '°';
+    el.phase().textContent = 'SETUP NEEDED';
+    // Don't run rep counter
+    if (repCounter) {
+      repCounter._inPosFr = 0;
+      repCounter.isReady  = false;
+    }
+    return;
+  }
+
+  // Camera OK
+  el.bodyVis().textContent = '✓ Good';
+  el.bodyVis().className   = 'val green';
+
+  // 4. Analyze form
+  const analysis = analyzeFrame(lm);
+
+  // 5. Feed GRU model (only when in position)
   if (inPosition && analysis.elbowAngle !== null) {
-    const fd = KEYPOINT_INDICES.flatMap(i => [
-      lm[i]?.x ?? 0, lm[i]?.y ?? 0, lm[i]?.z ?? 0, lm[i]?.visibility ?? 0
+    const fd = KP_INDICES.flatMap(i => [
+      lm[i]?.x??0, lm[i]?.y??0, lm[i]?.z??0, lm[i]?.visibility??0
     ]);
     gruModel.addFrame(fd);
     if (frameCount % ANOMALY_INTERVAL === 0) {
-      lastAnomaly = await gruModel.getScore(); // raw score now
+      lastScore = await gruModel.getScore();
     }
   } else {
     gruModel.clearBuffer();
-    lastAnomaly = null;
+    lastScore = null;
   }
 
+  // 6. Rep counter update
   const repEvent = repCounter.update(
     analysis.elbowAngle,
     analysis.isGoodForm,
     analysis.issues,
     inPosition,
-    lastAnomaly // pass raw score
+    lastScore
   );
 
+  // 7. Update UI
   updateUI(analysis, repEvent, inPosition);
 }
 
+// ── UI update ────────────────────────────────────────────────────────
 function updateUI(analysis, repEvent, inPosition) {
   if (!repCounter) return;
 
-  elGoodReps().textContent = repCounter.goodReps;
-  elBadReps().textContent  = repCounter.badReps;
+  el.goodReps().textContent = repCounter.goodReps;
+  el.badReps().textContent  = repCounter.badReps;
 
-  const displayAngle = repCounter.smoothedAngle ?? analysis.elbowAngle;
-  elElbow().textContent = displayAngle !== null ? Math.round(displayAngle) + '°' : '--';
+  const dispAngle = repCounter.smoothedAngle ?? analysis.elbowAngle;
+  el.elbow().textContent = dispAngle !== null ? Math.round(dispAngle) + '°' : '--';
 
+  // Status banner
   if (!inPosition) {
-    elPhaseEl().textContent = 'NOT IN POSITION';
-    setStatus('📍 Get into push-up position', 'waiting');
+    el.phase().textContent = '—';
+    setStatus('📍 Get into push-up position<br><small>Lie face-down, arms extended, full side body in frame</small>', 'warn');
   } else if (!repCounter.isReady) {
-    elPhaseEl().textContent = 'GET READY…';
-    setStatus('⏳ Hold position… getting ready', 'waiting');
+    el.phase().textContent = 'HOLD…';
+    setStatus('⏳ Hold your starting position…', 'warn');
   } else {
-    elPhaseEl().textContent = repCounter.phase;
-    setStatus('🟢 Counting — go!', 'ready');
+    el.phase().textContent = repCounter.phase;
+    setStatus('🟢 Go! Counting your reps.', 'ready');
   }
 
-  elAnomalyEl().textContent = lastAnomaly !== null ? lastAnomaly.toFixed(4) : '--';
-
+  // Only update feedback when a rep event fires
   if (repEvent) {
-    const fb = elFeedback();
-    if (repEvent.type === 'GOOD_REP') {
-      const tips = (repEvent.issues || [])
-        .filter(i => i.severity !== 'low' || repEvent.issues.length <= 2)
-        .sort((a,b) => rank(b.severity) - rank(a.severity))
-        .slice(0, 3);
-
-      if (tips.length === 0) {
-        fb.innerHTML = '<span class="good">✓ Perfect rep! Great form!</span>';
-      } else {
-        const tipHtml = tips.map(i =>
-          `• <span class="${i.severity === 'high' ? 'warn' : ''}">${i.message}</span>`
-        ).join('<br>');
-        fb.innerHTML = `<span class="good">✓ Good rep!</span> A few tips:<br>${tipHtml}`;
-      }
-    } else {
-      // BAD REP
-      const top = (repEvent.issues || [])
-        .sort((a,b) => rank(b.severity) - rank(a.severity))
-        .slice(0, 3)
-        .map(i => `• ${i.message}`)
-        .join('<br>');
-      fb.innerHTML = `<span class="bad">✗ Rep needs improvement:</span><br>${top}`;
-    }
+    renderFeedback(repEvent);
   }
 }
 
-function setStatus(text, cls) {
-  const el = elStatusEl();
-  el.textContent = text;
-  el.className = cls;
+function renderFeedback(evt) {
+  const fb = el.feedback();
+
+  if (evt.type === 'GOOD_REP') {
+    if (evt.quality === 'good') {
+      // Clean rep — no tips needed
+      fb.innerHTML = '<span class="good">✓ Great rep! Perfect form.</span>';
+    } else {
+      // Good rep but with minor form issues — count it, but show tips
+      const tips = evt.issues
+        .sort((a,b) => rank(b.severity)-rank(a.severity))
+        .slice(0,2)
+        .map(i => `<span class="tip">• ${i.message}</span>`)
+        .join('<br>');
+      fb.innerHTML = `<span class="warn">✓ Good rep</span> — minor form tips:<br>${tips}`;
+    }
+  } else {
+    // Bad rep
+    const msgs = evt.issues
+      .sort((a,b) => rank(b.severity)-rank(a.severity))
+      .slice(0,3)
+      .map(i => `<span class="tip">• ${i.message}</span>`)
+      .join('<br>');
+    fb.innerHTML = `<span class="bad">✗ Rep needs improvement:</span><br>${msgs}`;
+  }
 }
 
 function rank(s) { return {high:3,medium:2,low:1}[s]??0; }
 
-document.getElementById('start-btn').addEventListener('click', startApp);
-document.getElementById('reset-btn').addEventListener('click', () => {
+// ── Button wiring ────────────────────────────────────────────────────
+$('start-btn').addEventListener('click', startApp);
+$('reset-btn').addEventListener('click', () => {
   if (!repCounter) return;
   repCounter.reset();
-  lastAnomaly = null;
-  elGoodReps().textContent = '0';
-  elBadReps().textContent  = '0';
-  elFeedback().textContent = '';
-  setStatus('📍 Get into push-up position', 'waiting');
+  lastScore = null;
+  el.goodReps().textContent = '0';
+  el.badReps().textContent  = '0';
+  el.feedback().textContent = 'Form feedback will appear here after each rep.';
+  if (appRunning) setStatus('📍 Get into push-up position', 'warn');
 });
 </script>
 </body>
