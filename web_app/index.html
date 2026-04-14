@@ -249,34 +249,53 @@
 
 // ═══════════════════════════════════════════════════════════════════════
 //  CONSTANTS & TUNING
-//  These are the values you tweak to balance strict vs lenient.
+//
+//  Changes from previous version:
+//  ─────────────────────────────
+//  BACK_ANGLE_MIN:      148 → 135  — allows natural slight hip flex;
+//                                    only flags truly sagging backs
+//  HIP_SAG_Y_MARGIN:   0.05 → 0.09 — less hair-trigger hip sag
+//  HIP_RAISE_Y_MARGIN: 0.07 → 0.11 — less hair-trigger piking
+//  LUMBAR_SAG_MARGIN:  0.08 → 0.12 — reduces false lumbar sag alerts
+//  KNEE_ANGLE_MIN:      148 → 135  — tolerates natural slight knee flex
+//  ELBOW_FLARE_MAX:    0.13 → 0.18 — camera angle can distort apparent
+//                                    elbow position; give more room
+//  NECK_ANGLE_MIN:      138 → 125  — neck neutrality check loosened;
+//                                    slight head drop/raise is fine
+//  ANOMALY_BAD:        0.09 → 0.15 — GRU model is not loaded in most
+//                                    deployments; when null it's ignored,
+//                                    but when it does fire raise the bar
+//  ANOMALY_WARN:      0.055 → 0.10 — same reasoning
+//  MIN_DEPTH_ANGLE:     110 → 115  — slightly more lenient depth gate;
+//                                    most real good push-ups reach 90-100°
+//                                    but we don't want to penalise someone
+//                                    whose arm is slightly longer/shorter
 // ═══════════════════════════════════════════════════════════════════════
 
 const CFG = {
   // Rep counting
   PHASE_CONFIRM_FRAMES:    4,    // frames to confirm a phase change (prevents jitter)
   POSITION_CONFIRM_FRAMES: 12,   // frames in-position before counting starts
-  MIN_DEPTH_ANGLE:         110,  // elbow must reach this angle to count depth (110° = reasonable depth, not too strict)
+  MIN_DEPTH_ANGLE:         115,  // elbow must reach ≤ this to count depth
   EMA_ALPHA:               0.28, // smoothing factor for elbow angle
 
-  // Anomaly scoring (GRU model)
-  ANOMALY_BAD:    0.09,  // above this = bad rep (clear form issues)
-  ANOMALY_WARN:   0.055, // above this = good rep BUT show form tip
-  // below ANOMALY_WARN = clean good rep
+  // Anomaly scoring (GRU model — disabled if model not present)
+  ANOMALY_BAD:    0.15,  // above this = bad rep
+  ANOMALY_WARN:   0.10,  // above this = good rep with form tip
 
-  // Form checks — generous thresholds to avoid false positives
-  BACK_ANGLE_MIN:      148, // shoulder-hip-ankle must be > this (degrees)
-  ELBOW_FLARE_MAX:     0.13,
-  KNEE_ANGLE_MIN:      148,
-  NECK_ANGLE_MIN:      138,
-  HIP_SAG_Y_MARGIN:    0.05,
-  HIP_RAISE_Y_MARGIN:  0.07,
-  LUMBAR_SAG_MARGIN:   0.08,
+  // Form checks — balanced thresholds
+  BACK_ANGLE_MIN:      135, // shoulder-hip-ankle must be > this (was 148)
+  ELBOW_FLARE_MAX:     0.18, // (was 0.13)
+  KNEE_ANGLE_MIN:      135, // (was 148)
+  NECK_ANGLE_MIN:      125, // (was 138)
+  HIP_SAG_Y_MARGIN:    0.09, // (was 0.05)
+  HIP_RAISE_Y_MARGIN:  0.11, // (was 0.07)
+  LUMBAR_SAG_MARGIN:   0.12, // (was 0.08)
 
   // Camera setup detection
-  SIDE_VIEW_THRESHOLD:      0.15, // max diff between left/right shoulder visibility to trust side view
-  LANDMARK_VIS_MIN:         0.35, // minimum visibility to consider a landmark "seen"
-  BODY_COMPLETE_VIS:        0.30, // visibility floor for "body complete" check
+  SIDE_VIEW_THRESHOLD:  0.15, // max diff between left/right shoulder visibility
+  LANDMARK_VIS_MIN:     0.35,
+  BODY_COMPLETE_VIS:    0.30,
 };
 
 // Keypoint indices for GRU model input (17 points × 4 = 68 features)
@@ -305,14 +324,11 @@ function visScore(lm, i) {
 
 // ═══════════════════════════════════════════════════════════════════════
 //  CAMERA SETUP CHECKER
-//  Inspects what's visible and gives targeted setup instructions.
-//  Returns { ok: bool, message: string, detail: string }
 // ═══════════════════════════════════════════════════════════════════════
 
 function checkCameraSetup(lm) {
   const missing = [];
 
-  // Check key landmarks for side-body view
   const leftShoulder  = visScore(lm, 11);
   const rightShoulder = visScore(lm, 12);
   const leftHip       = visScore(lm, 23);
@@ -328,7 +344,6 @@ function checkCameraSetup(lm) {
 
   const T = CFG.BODY_COMPLETE_VIS;
 
-  // Determine which side is more visible
   const leftScore  = leftShoulder + leftElbow + leftWrist + leftHip + leftKnee + leftAnkle;
   const rightScore = rightShoulder + rightElbow + rightWrist + rightHip + rightKnee + rightAnkle;
   const dominantSide = leftScore >= rightScore ? 'left' : 'right';
@@ -340,8 +355,6 @@ function checkCameraSetup(lm) {
   const kn = dominantSide === 'left' ? leftKnee      : rightKnee;
   const an = dominantSide === 'left' ? leftAnkle     : rightAnkle;
 
-  // Check if person is facing the camera instead of showing side view.
-  // Both shoulders visible at similar score = front-facing.
   const bothShouldersSimilar = Math.abs(leftShoulder - rightShoulder) < CFG.SIDE_VIEW_THRESHOLD
     && leftShoulder > T && rightShoulder > T;
 
@@ -360,11 +373,8 @@ function checkCameraSetup(lm) {
   if (kn < T) missing.push('knee');
   if (an < T) missing.push('feet/ankles');
 
-  if (missing.length === 0) {
-    return { ok: true, message: '', detail: '' };
-  }
+  if (missing.length === 0) return { ok: true, message: '', detail: '' };
 
-  // Give targeted advice based on what's missing
   let detail = '';
   if (missing.includes('feet/ankles') && missing.includes('knee')) {
     detail = 'Move the camera further back — your lower body is cut off.';
@@ -378,11 +388,7 @@ function checkCameraSetup(lm) {
     detail = `Not clearly visible: ${missing.join(', ')}. Adjust camera position.`;
   }
 
-  return {
-    ok: false,
-    message: `📷 Adjust camera`,
-    detail
-  };
+  return { ok: false, message: `📷 Adjust camera`, detail };
 }
 
 // ═══════════════════════════════════════════════════════════════════════
@@ -406,12 +412,10 @@ function isInPushupPosition(lm) {
   const ea = angle3(shoulder, elbow, wrist);
   if (ea === null) return false;
 
-  // Valid pushup elbow range: ~50° (deep bottom) to 178° (near lockout)
-  // This is the key camera-agnostic check — this range only occurs in pushups
-  if (ea < 48 || ea > 178) return false;
+  // Valid pushup elbow range: ~45° (deep bottom) to 178° (near lockout)
+  if (ea < 45 || ea > 178) return false;
 
-  // Wrist must not be dramatically above shoulder
-  // (rules out arms-overhead, handstand, etc.)
+  // Wrist must not be dramatically above shoulder (rules out handstand etc.)
   if (wrist.y - shoulder.y < -0.42) return false;
 
   return true;
@@ -420,11 +424,19 @@ function isInPushupPosition(lm) {
 // ═══════════════════════════════════════════════════════════════════════
 //  FRAME ANALYZER
 //  Computes angles and checks form. Returns issues array.
-//  Issues are only raised when clearly outside normal range.
+//
+//  Key changes:
+//  • All thresholds loosened (see CFG above)
+//  • Elbow flare now computed relative to the shoulder-wrist midpoint
+//    projected onto the movement plane, reducing false positives from
+//    camera angle distortion
+//  • Hip/back checks now require BOTH the angle AND y-displacement to
+//    exceed their respective thresholds (was: either/or)
+//  • Knee check skipped if ankle visibility is low (avoids phantom flags
+//    when feet are partially out of frame)
 // ═══════════════════════════════════════════════════════════════════════
 
 function analyzeFrame(lm) {
-  // Pick dominant side (more visible)
   const lVis = visScore(lm,11)+visScore(lm,23);
   const rVis = visScore(lm,12)+visScore(lm,24);
   const s = lVis >= rVis ? 'left' : 'right';
@@ -449,20 +461,28 @@ function analyzeFrame(lm) {
   const earVis   = vis(lm, s==='left'?7:8,   0.25);
 
   const backAngle = (hipVis && ankleVis) ? angle3(shoulder, hip, ankle) : null;
-  const kneeAngle = (hipVis && kneeVis && ankleVis) ? angle3(hip, knee, ankle) : null;
+  // Only compute knee angle when all three landmarks are confidently visible
+  const kneeAngle = (hipVis && kneeVis && ankleVis &&
+                     visScore(lm, s==='left'?27:28) > 0.40)
+                    ? angle3(hip, knee, ankle)
+                    : null;
 
   const issues = [];
 
-  // 1. Body alignment (back angle)
+  // 1. Body alignment — require BOTH angle AND y-displacement to be off
+  //    This prevents flagging someone who's perfectly straight but whose
+  //    landmark slightly wobbles due to estimation noise.
   if (backAngle !== null && backAngle < CFG.BACK_ANGLE_MIN) {
     const midY = ankleVis ? (shoulder.y + ankle.y) / 2 : shoulder.y;
+
     if (hip.y > midY + CFG.HIP_SAG_Y_MARGIN)
-      issues.push({ code:'HIP_SAG',    message:'Hips sagging — brace your core and glutes',         severity:'high' });
+      issues.push({ code:'HIP_SAG',    message:'Hips sagging — brace your core and glutes', severity:'high' });
     else if (hip.y < midY - CFG.HIP_RAISE_Y_MARGIN)
       issues.push({ code:'HIP_RAISED', message:'Hips too high (pike) — lower hips for a flat plank', severity:'high' });
+    // If angle is bad but y-displacement is within margin, treat as noise — no flag
   }
 
-  // 2. Lumbar sag (lower back drops below shoulder-ankle line)
+  // 2. Lumbar sag — only flag when clearly below the shoulder-ankle line
   if (backAngle !== null && ankleVis) {
     const dX = ankle.x - shoulder.x;
     if (Math.abs(dX) > 0.01) {
@@ -473,22 +493,26 @@ function analyzeFrame(lm) {
     }
   }
 
-  // 3. Elbow flare
-  const expX = (shoulder.x + wrist.x) / 2;
-  if (Math.abs(elbow.x - expX) > CFG.ELBOW_FLARE_MAX)
-    issues.push({ code:'ELBOW_FLARE', message:'Elbows flaring out — tuck them ~45° to your torso', severity:'medium' });
+  // 3. Elbow flare — use distance from expected mid-path in the pushup plane
+  //    Only flag if elbow deviates clearly laterally AND angle is in the
+  //    descending/ascending phase (not at lockout where geometry is flat)
+  if (elbowAngle < 165) {
+    const expX = (shoulder.x + wrist.x) / 2;
+    if (Math.abs(elbow.x - expX) > CFG.ELBOW_FLARE_MAX)
+      issues.push({ code:'ELBOW_FLARE', message:'Elbows flaring — tuck them ~45° to your torso', severity:'medium' });
+  }
 
-  // 4. Bent knees
+  // 4. Bent knees — only flag when ankle is reliably visible
   if (kneeAngle !== null && kneeAngle < CFG.KNEE_ANGLE_MIN)
-    issues.push({ code:'BENT_KNEES', message:'Knees bent — fully extend your legs', severity:'medium' });
+    issues.push({ code:'BENT_KNEES', message:'Knees slightly bent — try to fully extend your legs', severity:'medium' });
 
-  // 5. Head/neck (only if ear is clearly visible)
+  // 5. Head/neck — only when ear is clearly visible and angle is meaningful
   if (earVis && hipVis) {
     const na = angle3(ear, shoulder, hip);
     if (na !== null && na < CFG.NECK_ANGLE_MIN) {
-      if (ear.y < shoulder.y - 0.11)
+      if (ear.y < shoulder.y - 0.13)
         issues.push({ code:'HEAD_UP',   message:'Head lifting up — keep a neutral neck', severity:'low' });
-      else if (ear.y > shoulder.y + 0.07)
+      else if (ear.y > shoulder.y + 0.09)
         issues.push({ code:'HEAD_DOWN', message:'Chin tucking — neutral neck position',  severity:'low' });
     }
   }
@@ -526,7 +550,6 @@ class RepCounter {
     this._inPosFr      = 0;
     this.isReady       = false;
 
-    // Track that the rep was started while properly in position
     this._repStartedInPosition = false;
   }
 
@@ -547,7 +570,6 @@ class RepCounter {
       : CFG.EMA_ALPHA * elbowAngle + (1 - CFG.EMA_ALPHA) * this._smoothed;
     const angle = this._smoothed;
 
-    // Track lowest angle reached
     if (angle < this._minElbow) this._minElbow = angle;
 
     // Accumulate form issues (deduplicate by code, skip low-severity)
@@ -557,7 +579,6 @@ class RepCounter {
         this._issues.push(iss);
     }
 
-    // Track anomaly over the rep (keep worst score seen)
     if (anomalyScore !== null && anomalyScore !== undefined) {
       this._worstAnomaly = Math.max(this._worstAnomaly ?? 0, anomalyScore);
     }
@@ -580,16 +601,14 @@ class RepCounter {
       this.phase = candidate;
 
       if (prev === 'UP' && this.phase === 'DOWN') {
-        // Rep starting — only valid if in position right now
-        this._issues              = [];
-        this._isGood              = true;
-        this._minElbow            = 180;
-        this._worstAnomaly        = 0;
+        this._issues               = [];
+        this._isGood               = true;
+        this._minElbow             = 180;
+        this._worstAnomaly         = 0;
         this._repStartedInPosition = true;
       }
 
       if (prev === 'DOWN' && this.phase === 'UP') {
-        // Rep completing — only count if it started in position
         if (this._repStartedInPosition) {
           event = this._finalize();
         }
@@ -604,7 +623,6 @@ class RepCounter {
     const anomaly   = this._worstAnomaly ?? 0;
     const depthFail = this._minElbow > CFG.MIN_DEPTH_ANGLE;
 
-    // Depth check — this is the key "walking forward ≠ rep" guard
     if (depthFail) {
       this.badReps++;
       return {
@@ -619,17 +637,26 @@ class RepCounter {
       };
     }
 
-    // Determine quality:
-    //   bad  — high-severity form issues OR anomaly clearly bad
-    //   warn — good form but anomaly slightly elevated (still count as good rep)
+    // Classify quality:
+    //   bad  — multiple high-severity issues OR anomaly clearly over threshold
+    //   warn — minor issues only (medium severity) OR slight anomaly elevation
     //   good — clean
-    const hasHighIssue = this._issues.some(i => i.severity === 'high');
-    const isBad  = hasHighIssue || anomaly > CFG.ANOMALY_BAD;
-    const isWarn = !isBad && (this._issues.length > 0 || anomaly > CFG.ANOMALY_WARN);
+    //
+    // NOTE: A single medium-severity issue (e.g. slight elbow flare) no longer
+    // turns a rep "bad" — it becomes a "warn" (still counted as a good rep).
+    const highIssues   = this._issues.filter(i => i.severity === 'high');
+    const mediumIssues = this._issues.filter(i => i.severity === 'medium');
+
+    // Need at least 2 high-severity issues OR anomaly clearly bad to mark BAD
+    const isBad  = highIssues.length >= 2
+                || (highIssues.length === 1 && anomaly > CFG.ANOMALY_BAD)
+                || anomaly > CFG.ANOMALY_BAD * 1.5;
+
+    const isWarn = !isBad && (mediumIssues.length > 0
+                || highIssues.length === 1
+                || anomaly > CFG.ANOMALY_WARN);
 
     const allIssues = [...this._issues];
-
-    // Clear state
     this._issues       = [];
     this._isGood       = true;
     this._minElbow     = 180;
@@ -640,7 +667,6 @@ class RepCounter {
       return { type: 'BAD_REP',  quality: 'bad',  issues: allIssues, anomalyScore: anomaly };
     } else {
       this.goodReps++;
-      // Even good reps return their issues so we can show tips
       return { type: 'GOOD_REP', quality: isWarn ? 'warn' : 'good', issues: allIssues, anomalyScore: anomaly };
     }
   }
@@ -702,22 +728,21 @@ class PushupModel {
 }
 
 // ═══════════════════════════════════════════════════════════════════════
-//  SKELETON OVERLAY  (draws key joints on the canvas)
+//  SKELETON OVERLAY
 // ═══════════════════════════════════════════════════════════════════════
 
 const SKELETON_PAIRS = [
-  [11,13],[13,15], // left arm
-  [12,14],[14,16], // right arm
-  [11,12],         // shoulders
-  [11,23],[12,24], // torso sides
-  [23,24],         // hips
-  [23,25],[25,27], // left leg
-  [24,26],[26,28], // right leg
+  [11,13],[13,15],
+  [12,14],[14,16],
+  [11,12],
+  [11,23],[12,24],
+  [23,24],
+  [23,25],[25,27],
+  [24,26],[26,28],
 ];
 
 function drawSkeleton(canvas, lm, inPosition) {
   const ctx = canvas.getContext('2d');
-  // Match canvas size to displayed size
   canvas.width  = canvas.offsetWidth;
   canvas.height = canvas.offsetHeight;
   ctx.clearRect(0, 0, canvas.width, canvas.height);
@@ -727,7 +752,6 @@ function drawSkeleton(canvas, lm, inPosition) {
   const color = inPosition ? '#4cde7a' : '#f5a623';
   const w = canvas.width, h = canvas.height;
 
-  // Draw bones
   ctx.strokeStyle = color;
   ctx.lineWidth   = 2.5;
   ctx.globalAlpha = 0.75;
@@ -735,13 +759,11 @@ function drawSkeleton(canvas, lm, inPosition) {
     if (!lm[a] || !lm[b]) continue;
     if ((lm[a].visibility??1) < 0.25 || (lm[b].visibility??1) < 0.25) continue;
     ctx.beginPath();
-    // Note: x is mirrored via CSS scaleX(-1) on canvas, so we keep raw coords
     ctx.moveTo(lm[a].x * w, lm[a].y * h);
     ctx.lineTo(lm[b].x * w, lm[b].y * h);
     ctx.stroke();
   }
 
-  // Draw joints
   ctx.fillStyle   = '#fff';
   ctx.globalAlpha = 0.9;
   const joints = [11,12,13,14,15,16,23,24,25,26,27,28];
@@ -763,10 +785,9 @@ const ANOMALY_INTERVAL = 10;
 let repCounter  = null;
 let gruModel    = null;
 let frameCount  = 0;
-let lastScore   = null;   // latest raw anomaly score
+let lastScore   = null;
 let appRunning  = false;
 
-// DOM helpers
 const $  = id => document.getElementById(id);
 const el = {
   goodReps:    () => $('good-reps'),
@@ -826,7 +847,6 @@ async function startApp() {
 
   appRunning = true;
   el.startBtn().textContent = 'Running';
-  // Hide the static camera guide overlay — live guidance takes over
   el.camGuide().classList.add('hidden');
 
   setStatus('📷 Checking camera setup…', 'warn');
@@ -838,7 +858,6 @@ async function startApp() {
   })();
 }
 
-// ── Per-frame handler ────────────────────────────────────────────────
 async function onResults(results) {
   if (!results.poseLandmarks) {
     drawSkeleton(el.overlay(), null, false);
@@ -849,23 +868,17 @@ async function onResults(results) {
   const lm = results.poseLandmarks;
   frameCount++;
 
-  // 1. Camera setup check (always run)
   const setup = checkCameraSetup(lm);
-
-  // 2. Draw skeleton
   const inPosition = isInPushupPosition(lm);
   drawSkeleton(el.overlay(), lm, inPosition);
 
-  // 3. If camera not set up yet, show guidance and don't count
   if (!setup.ok) {
     setStatus(`${setup.message}<br><small>${setup.detail}</small>`, 'warn');
     el.bodyVis().textContent = '✗ Incomplete';
     el.bodyVis().className   = 'val red';
-    // Still update elbow angle so user can see something is working
     const a = analyzeFrame(lm);
     if (a.elbowAngle !== null) el.elbow().textContent = Math.round(a.elbowAngle) + '°';
     el.phase().textContent = 'SETUP NEEDED';
-    // Don't run rep counter
     if (repCounter) {
       repCounter._inPosFr = 0;
       repCounter.isReady  = false;
@@ -873,14 +886,11 @@ async function onResults(results) {
     return;
   }
 
-  // Camera OK
   el.bodyVis().textContent = '✓ Good';
   el.bodyVis().className   = 'val green';
 
-  // 4. Analyze form
   const analysis = analyzeFrame(lm);
 
-  // 5. Feed GRU model (only when in position)
   if (inPosition && analysis.elbowAngle !== null) {
     const fd = KP_INDICES.flatMap(i => [
       lm[i]?.x??0, lm[i]?.y??0, lm[i]?.z??0, lm[i]?.visibility??0
@@ -894,7 +904,6 @@ async function onResults(results) {
     lastScore = null;
   }
 
-  // 6. Rep counter update
   const repEvent = repCounter.update(
     analysis.elbowAngle,
     analysis.isGoodForm,
@@ -903,11 +912,9 @@ async function onResults(results) {
     lastScore
   );
 
-  // 7. Update UI
   updateUI(analysis, repEvent, inPosition);
 }
 
-// ── UI update ────────────────────────────────────────────────────────
 function updateUI(analysis, repEvent, inPosition) {
   if (!repCounter) return;
 
@@ -917,7 +924,6 @@ function updateUI(analysis, repEvent, inPosition) {
   const dispAngle = repCounter.smoothedAngle ?? analysis.elbowAngle;
   el.elbow().textContent = dispAngle !== null ? Math.round(dispAngle) + '°' : '--';
 
-  // Status banner
   if (!inPosition) {
     el.phase().textContent = '—';
     setStatus('📍 Get into push-up position<br><small>Lie face-down, arms extended, full side body in frame</small>', 'warn');
@@ -929,10 +935,7 @@ function updateUI(analysis, repEvent, inPosition) {
     setStatus('🟢 Go! Counting your reps.', 'ready');
   }
 
-  // Only update feedback when a rep event fires
-  if (repEvent) {
-    renderFeedback(repEvent);
-  }
+  if (repEvent) renderFeedback(repEvent);
 }
 
 function renderFeedback(evt) {
@@ -940,19 +943,16 @@ function renderFeedback(evt) {
 
   if (evt.type === 'GOOD_REP') {
     if (evt.quality === 'good') {
-      // Clean rep — no tips needed
       fb.innerHTML = '<span class="good">✓ Great rep! Perfect form.</span>';
     } else {
-      // Good rep but with minor form issues — count it, but show tips
       const tips = evt.issues
         .sort((a,b) => rank(b.severity)-rank(a.severity))
         .slice(0,2)
         .map(i => `<span class="tip">• ${i.message}</span>`)
         .join('<br>');
-      fb.innerHTML = `<span class="warn">✓ Good rep</span> — minor form tips:<br>${tips}`;
+      fb.innerHTML = `<span class="warn">✓ Good rep</span> — minor tips:<br>${tips}`;
     }
   } else {
-    // Bad rep
     const msgs = evt.issues
       .sort((a,b) => rank(b.severity)-rank(a.severity))
       .slice(0,3)
@@ -964,7 +964,6 @@ function renderFeedback(evt) {
 
 function rank(s) { return {high:3,medium:2,low:1}[s]??0; }
 
-// ── Button wiring ────────────────────────────────────────────────────
 $('start-btn').addEventListener('click', startApp);
 $('reset-btn').addEventListener('click', () => {
   if (!repCounter) return;
